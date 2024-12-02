@@ -238,7 +238,7 @@ async fn main() {
         cache: None,
     });
 
-    let numbers = vec![0f32; 32];
+    let numbers = vec![0f32; 256];
     //   The source of a copy.
     let storage_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
     label: Some("Storage Buffer"),
@@ -248,7 +248,8 @@ async fn main() {
         | wgpu::BufferUsages::COPY_SRC,
     });
 
-    let size = size_of_val(&numbers) as wgpu::BufferAddress;
+    let size = size_of_val(numbers.as_slice()) as wgpu::BufferAddress;
+    println!("size: {}", size);
     // Instantiates buffer without data.
     // `usage` of buffer specifies how it can be used:
     //   `BufferUsages::MAP_READ` allows it to be read (outside the shader).
