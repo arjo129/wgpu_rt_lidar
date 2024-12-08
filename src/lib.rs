@@ -5,8 +5,17 @@ use glam::{Affine3A, Quat, Vec3};
 use wgpu::{util::DeviceExt, Blas, Instance};
 
 
-pub struct ObjectHande(usize);
+/// Handle for individual rigid geometries
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ObjectHandle(usize);
+
+/// Handle for individual instances of rigid geometries
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct InstanceHandle(usize);
+
+/// Handle for individual lidar sensors
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct LidarDescriptionHandle(usize);
 
 // TODO(arjo): Remove this 
 #[inline]
@@ -38,11 +47,23 @@ pub struct BLASScene {
     blas_geo_size_descs: Vec<wgpu::BlasTriangleGeometrySizeDescriptor>,
 }
 
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+pub struct BeamDirection {
+    pub directions: [f32; 3],
+}
+pub struct LidarDescription {
+    pub vectors: Vec<BeamDirection>,
+}
+
 #[derive(Default)]
 pub struct LiDARRenderScene {
     objects: Vec<(Vec<Vertex>, Vec<u16>)>,
     need_tlas_rebuild: bool,
     need_blas_rebuild: Option<BLASScene>,
+    instances: Vec<(ObjectHandle, glam::Affine3A)>,
+    lidars: Vec<(LidarDescription, glam::Affine3A)>,
 }
 
 impl LiDARRenderScene {
@@ -50,34 +71,44 @@ impl LiDARRenderScene {
         Self::default()
     }
 
-    pub fn add_object(&mut self, vertices: &Vec<Vertex>, indices: &Vec<u16>) -> ObjectHande {
-        let handle = ObjectHande(self.objects.len());
+    pub fn add_object(&mut self, vertices: &Vec<Vertex>, indices: &Vec<u16>) -> ObjectHandle {
+        let handle = ObjectHandle(self.objects.len());
         self.objects.push((vertices.clone(), indices.clone()));
         self.need_blas_rebuild = None;
         self.need_tlas_rebuild = true;
         handle
     }
 
-    pub fn create_instance(object: ObjectHande) {
+    pub fn add_instance(&mut self, object: ObjectHandle, pose: glam::Affine3A) -> InstanceHandle {
+        let inst = InstanceHandle(self.instances.len());
+        self.instances.push((object, pose));
+        inst
+    }
 
+    pub fn add_lidar(&mut self, desc: LidarDescription) -> LidarDescriptionHandle {
+        
+        let desc_handle = LidarDescriptionHandle(self.lidars.len());
+        self.lidars.push((desc, Affine3A::IDENTITY));
+        desc_handle
+    }
+
+    pub fn set_lidar_pose(&mut self, handle: LidarDescriptionHandle, pose: glam::Affine3A) {
+        self.lidars[handle.0].1 = pose;
     }
 
     pub async fn get_lidar_returns(&mut self, rc: &RenderContext) {
         if self.need_blas_rebuild.is_none() {
             self.need_blas_rebuild = Some(self.build_blas(rc));
         }
-
         let Some(blas_scene) = self.need_blas_rebuild.as_ref() else {
             panic!("BLAS not built");
         };
-
-        let side_count = 8;
 
         let tlas = rc.device.create_tlas(&wgpu::CreateTlasDescriptor {
             label: None,
             flags: wgpu::AccelerationStructureFlags::PREFER_FAST_TRACE,
             update_mode: wgpu::AccelerationStructureUpdateMode::Build,
-            max_instances: side_count * side_count,
+            max_instances: self.instances.len() as u32,
         });
     
         let shader = rc.device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -135,25 +166,14 @@ impl LiDARRenderScene {
     
         let mut tlas_package = wgpu::TlasPackage::new(tlas);
     
-        let dist = 3.0;
-    
-        // TODO(arjo): Rewrite the folloring to use the instansing API
-        for x in 0..side_count {
-            for y in 0..side_count {
-                tlas_package[(x + y * side_count) as usize] = Some(wgpu::TlasInstance::new(
-                    &blas_scene.blases[0],
-                    affine_to_rows(&Affine3A::from_rotation_translation(
-                        Quat::from_rotation_y(45.9_f32.to_radians()),
-                        Vec3 {
-                            x: x as f32 * dist,
-                            y: y as f32 * dist,
-                            z: -30.0,
-                        },
-                    )),
-                    0,
-                    0xff,
-                ));
-            }
+        // TODO(arjo): Rewrite the folloring to use the instancing API
+        for x in 0..self.instances.len() {
+            tlas_package[x] = Some(wgpu::TlasInstance::new(
+                &blas_scene.blases[self.instances[x].0.0],
+                affine_to_rows(&self.instances[x].1),
+                0,
+                0xff,
+            ));
         }
     
         let mut encoder =
@@ -289,7 +309,7 @@ impl LiDARRenderScene {
     
     }
 
-    pub fn set_pose(&mut self, handle: ObjectHande, pose: glam::Mat4) {
+    pub fn set_pose(&mut self, handle: ObjectHandle, pose: glam::Mat4) {
         todo!()
     }
 }
