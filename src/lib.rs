@@ -17,7 +17,7 @@ pub struct InstanceHandle(usize);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct LidarDescriptionHandle(usize);
 
-// TODO(arjo): Remove this 
+
 #[inline]
 fn affine_to_rows(mat: &Affine3A) -> [f32; 12] {
     let row_0 = mat.matrix3.row(0);
@@ -40,7 +40,9 @@ fn affine_to_rows(mat: &Affine3A) -> [f32; 12] {
     ]
 }
 
-pub struct BLASScene {
+
+/// A scene that can be rendered with a ray tracer
+struct BLASScene {
     vertex_buf: wgpu::Buffer,
     index_buf: wgpu::Buffer,
     blases: Vec<wgpu::Blas>,
@@ -53,8 +55,23 @@ pub struct BLASScene {
 pub struct BeamDirection {
     pub directions: [f32; 3],
 }
+
+impl BeamDirection {
+    pub fn new(directions: [f32; 3]) -> Self {
+        Self {
+            directions,
+        }
+    }
+}
 pub struct LidarDescription {
     pub vectors: Vec<BeamDirection>,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct GPULidarBeamId {
+    direction: BeamDirection,
+    lidar_id: u32
 }
 
 #[derive(Default)]
@@ -94,6 +111,10 @@ impl LiDARRenderScene {
 
     pub fn set_lidar_pose(&mut self, handle: LidarDescriptionHandle, pose: glam::Affine3A) {
         self.lidars[handle.0].1 = pose;
+    }
+
+    pub fn set_instance_pose(&mut self, handle: InstanceHandle, pose: glam::Affine3A) {
+        self.instances[handle.0].1 = pose;
     }
 
     pub async fn get_lidar_returns(&mut self, rc: &RenderContext) {
@@ -147,6 +168,30 @@ impl LiDARRenderScene {
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+
+        // TODO(arjo): Only recompute when needed.
+        let lidar_beams = self.lidars.iter().map(|(desc, pose)| {
+            let mut beams = Vec::new();
+            for (id,beam) in desc.vectors.iter().enumerate() {
+                // Do this in the shader itself.
+                // let direction = pose.transform_vector3(Vec3::new(beam.directions[0], beam.directions[1], beam.directions[2]));
+                beams.push(GPULidarBeamId {
+                    direction: *beam,
+                    lidar_id: id as u32
+                });
+            }
+            beams
+        }).flatten().collect::<Vec<GPULidarBeamId>>();
+
+        // Create a buffer of lidar beams
+        let lidar_buffer = rc.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Lidar Buffer"),
+            contents: bytemuck::cast_slice(&lidar_beams),
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
+        });
+
     
         let compute_bind_group_layout = compute_pipeline.get_bind_group_layout(0);
         let compute_bind_group = rc.device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -160,6 +205,10 @@ impl LiDARRenderScene {
                 wgpu::BindGroupEntry {
                     binding: 1,
                     resource: wgpu::BindingResource::AccelerationStructure(&tlas),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: lidar_buffer.as_entire_binding(),
                 },
             ],
         });
@@ -307,10 +356,6 @@ impl LiDARRenderScene {
             blas_geo_size_descs
         }
     
-    }
-
-    pub fn set_pose(&mut self, handle: ObjectHandle, pose: glam::Mat4) {
-        todo!()
     }
 }
 

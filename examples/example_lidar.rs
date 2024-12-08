@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use bytemuck_derive::{Pod, Zeroable};
 use glam::{Affine3A, Mat4, Quat, Vec3};
 use wgpu::{core::device::{self, queue}, util::DeviceExt};
-use wgpu_rt_lidar::{vertex, LiDARRenderScene, RenderContext, Vertex};
+use wgpu_rt_lidar::{vertex, BeamDirection, LiDARRenderScene, LidarDescription, RenderContext, Vertex};
 
 
 fn create_vertices() -> (Vec<Vertex>, Vec<u16>) {
@@ -83,6 +83,15 @@ async fn main() {
             scene.add_instance(handle, pose);
         }
     }
+
+    // vec3<f32>(0.0, sin(3.14* angle/256.0), cos(3.14* angle/256.0))
+    let lidar_beam = (0..256).map(|f| {
+        let angle = 3.14 * f as f32 / 256.0;
+        BeamDirection::new([0.0, angle.sin(), angle.cos()])
+    }).collect::<Vec<_>>();
+
+    let lidar_desc = LidarDescription { vectors: lidar_beam };
+    scene.add_lidar(lidar_desc);
 
     // Render context creates a new GPU instance and a new device.
     let render_context = RenderContext::new(wgpu::Instance::default()).await;
