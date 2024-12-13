@@ -1,4 +1,4 @@
-use std::{borrow::Cow, collections::HashMap};
+use std::{borrow::Cow, collections::{HashMap, HashSet}};
 
 use bytemuck_derive::{Pod, Zeroable};
 use glam::{Affine3A, Quat, Vec3};
@@ -50,6 +50,14 @@ struct BLASScene {
 }
 
 
+struct RaytracePipeline {
+    pipeline: wgpu::ComputePipeline,
+    bind_group: wgpu::BindGroup,
+    tlas_package: wgpu::TlasPackage,
+    staging_buffer: wgpu::Buffer,
+    storage_buffer: wgpu::Buffer,
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
 pub struct BeamDirection {
@@ -78,9 +86,12 @@ struct GPULidarBeamId {
 pub struct LiDARRenderScene {
     objects: Vec<(Vec<Vertex>, Vec<u16>)>,
     need_tlas_rebuild: bool,
+    tlas_obj_to_update: HashSet<usize>,
     need_blas_rebuild: Option<BLASScene>,
+    raytrace_pipeline: Option<RaytracePipeline>,
     instances: Vec<(ObjectHandle, glam::Affine3A)>,
     lidars: Vec<(LidarDescription, glam::Affine3A)>,
+    
 }
 
 impl LiDARRenderScene {
@@ -99,6 +110,7 @@ impl LiDARRenderScene {
     pub fn add_instance(&mut self, object: ObjectHandle, pose: glam::Affine3A) -> InstanceHandle {
         let inst = InstanceHandle(self.instances.len());
         self.instances.push((object, pose));
+        self.need_tlas_rebuild = true;
         inst
     }
 
@@ -115,15 +127,90 @@ impl LiDARRenderScene {
 
     pub fn set_instance_pose(&mut self, handle: InstanceHandle, pose: glam::Affine3A) {
         self.instances[handle.0].1 = pose;
+        self.tlas_obj_to_update.insert(handle.0);
     }
 
     pub async fn get_lidar_returns(&mut self, rc: &RenderContext) {
+
+        let numbers = vec![0f32; 256];
+        let size = size_of_val(numbers.as_slice()) as wgpu::BufferAddress;
         if self.need_blas_rebuild.is_none() {
             self.need_blas_rebuild = Some(self.build_blas(rc));
         }
         let Some(blas_scene) = self.need_blas_rebuild.as_ref() else {
             panic!("BLAS not built");
         };
+
+        if let Some(ref mut pipeline) = self.raytrace_pipeline {
+            if self.need_tlas_rebuild {
+               // self.rebuild_tlas(rc, blas_scene);
+            }
+
+            for tlas_id in &self.tlas_obj_to_update {
+                pipeline.tlas_package[*tlas_id] = Some(wgpu::TlasInstance::new(
+                    &blas_scene.blases[self.instances[*tlas_id].0.0],
+                    affine_to_rows(&self.instances[*tlas_id].1),
+                    0,
+                    0xff,
+                ));
+            }
+            self.tlas_obj_to_update.clear();
+            //self.raytrace(rc, blas_scene);
+
+            let mut encoder =
+            rc.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+
+            encoder.build_acceleration_structures(std::iter::empty(), std::iter::once(&pipeline.tlas_package));
+
+            {
+                let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: None,
+                    timestamp_writes: None,
+                });
+                cpass.set_pipeline(&pipeline.pipeline);
+                cpass.set_bind_group(0, Some(&pipeline.bind_group), &[]);
+                cpass.dispatch_workgroups(256, 1, 1);
+            }
+
+            // Sets adds copy operation to command encoder.
+            // Will copy data from storage buffer on GPU to staging buffer on CPU.
+            encoder.copy_buffer_to_buffer(&pipeline.storage_buffer, 0, &pipeline.staging_buffer, 0, size);
+            
+            // Submits command encoder for processing
+            rc.queue.submit(Some(encoder.finish()));
+        
+            // Note that we're not calling `.await` here.
+            let buffer_slice = pipeline.staging_buffer.slice(..);
+            // Sets the buffer up for mapping, sending over the result of the mapping back to us when it is finished.
+            let (sender, receiver) = flume::bounded(1);
+            buffer_slice.map_async(wgpu::MapMode::Read, move |v| sender.send(v).unwrap());
+        
+            // Poll the device in a blocking manner so that our future resolves.
+            // In an actual application, `device.poll(...)` should
+            // be called in an event loop or on another thread.
+            rc.device.poll(wgpu::Maintain::wait()).panic_on_timeout();
+        
+            // Awaits until `buffer_future` can be read from
+            if let Ok(Ok(())) = receiver.recv_async().await {
+                // Gets contents of buffer
+                let data = buffer_slice.get_mapped_range();
+                // Since contents are got in bytes, this converts these bytes back to u32
+                let result: Vec<f32> = bytemuck::cast_slice(&data).to_vec();
+        
+                // With the current interface, we have to make sure all mapped views are
+                // dropped before we unmap the buffer.
+                drop(data);
+                pipeline.staging_buffer.unmap(); // Unmaps buffer from memory
+                                        // If you are familiar with C++ these 2 lines can be thought of similarly to:
+                                        //   delete myPointer;
+                                        //   myPointer = NULL;
+                                        // It effectively frees the memory
+        
+                // Returns data from buffer
+                println!("{:?}", result); 
+            }
+            return; 
+        }
 
         let tlas = rc.device.create_tlas(&wgpu::CreateTlasDescriptor {
             label: None,
@@ -146,7 +233,7 @@ impl LiDARRenderScene {
             cache: None,
         });
     
-        let numbers = vec![0f32; 256];
+     
         //   The source of a copy.
         let storage_buffer = rc.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("Storage Buffer"),
@@ -156,7 +243,7 @@ impl LiDARRenderScene {
             | wgpu::BufferUsages::COPY_SRC,
         });
     
-        let size = size_of_val(numbers.as_slice()) as wgpu::BufferAddress;
+        
         println!("size: {}", size);
         // Instantiates buffer without data.
         // `usage` of buffer specifies how it can be used:
@@ -257,6 +344,7 @@ impl LiDARRenderScene {
             cpass.insert_debug_marker("compute collatz iterations");
             cpass.dispatch_workgroups(numbers.len() as u32, 1, 1); // Number of cells to run, the (x,y,z) size of item being processed
         }
+      
         // Sets adds copy operation to command encoder.
         // Will copy data from storage buffer on GPU to staging buffer on CPU.
         encoder.copy_buffer_to_buffer(&storage_buffer, 0, &staging_buffer, 0, size);
@@ -293,7 +381,14 @@ impl LiDARRenderScene {
     
             // Returns data from buffer
             println!("{:?}", result); 
-        }       
+        } 
+        self.raytrace_pipeline = Some(RaytracePipeline{
+            bind_group: compute_bind_group,
+            pipeline: compute_pipeline,
+            tlas_package,
+            staging_buffer,
+            storage_buffer
+        });      
     }
 
 

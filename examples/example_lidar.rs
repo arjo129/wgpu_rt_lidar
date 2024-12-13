@@ -84,18 +84,31 @@ async fn main() {
         }
     }
 
-    // vec3<f32>(0.0, sin(3.14* angle/256.0), cos(3.14* angle/256.0))
+    // Create a lidar description. This is a 256 beam lidar.
     let lidar_beam = (0..256).map(|f| {
         let angle = 3.14 * f as f32 / 256.0;
         BeamDirection::new([0.0, angle.sin(), angle.cos()])
     }).collect::<Vec<_>>();
 
     let lidar_desc = LidarDescription { vectors: lidar_beam };
-    scene.add_lidar(lidar_desc);
+    let lidar_handle = scene.add_lidar(lidar_desc);
+    
+    /// Set the lidar pose in the scene
+    scene.set_lidar_pose(lidar_handle, Affine3A::from_rotation_translation(
+        Quat::from_rotation_y(0_f32.to_radians()),
+        Vec3 {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+        },
+    ));
 
     // Render context creates a new GPU instance and a new device.
     let render_context = RenderContext::new(wgpu::Instance::default()).await;
     
     // This will render the scene and return the lidar returns.
+    scene.get_lidar_returns(&render_context).await;
+
+    // Do it second time
     scene.get_lidar_returns(&render_context).await;
 }
