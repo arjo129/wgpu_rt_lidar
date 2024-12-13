@@ -2,9 +2,13 @@ use std::borrow::Cow;
 
 use bytemuck_derive::{Pod, Zeroable};
 use glam::{Affine3A, Mat4, Quat, Vec3};
-use wgpu::{core::device::{self, queue}, util::DeviceExt};
-use wgpu_rt_lidar::{vertex, BeamDirection, LiDARRenderScene, LidarDescription, RenderContext, Vertex};
-
+use wgpu::{
+    core::device::{self, queue},
+    util::DeviceExt,
+};
+use wgpu_rt_lidar::{
+    vertex, BeamDirection, LiDARRenderScene, LidarDescription, RenderContext, Vertex,
+};
 
 fn create_vertices() -> (Vec<Vertex>, Vec<u16>) {
     let vertex_data = [
@@ -56,7 +60,7 @@ fn create_vertices() -> (Vec<Vertex>, Vec<u16>) {
 async fn main() {
     let mut scene = LiDARRenderScene::new();
     let (vertex_data, index_data) = create_vertices();
-    
+
     // Adding an object creates a handle
     let handle = scene.add_object(&vertex_data, &index_data);
 
@@ -64,48 +68,53 @@ async fn main() {
     // accross existing instances. So for incance if your instance is a car, you can
     // have multiple cars in the scene without duplicating the geometry. In this case we
     // are rendering the same cube.
-    
-    
+
     let side_count = 8;
     let dist = 3.0;
     for x in 0..side_count {
         for y in 0..side_count {
-
             let pose = Affine3A::from_rotation_translation(
-                    Quat::from_rotation_y(45.9_f32.to_radians()),
-                    Vec3 {
-                        x: x as f32 * dist,
-                        y: y as f32 * dist,
-                        z: -30.0,
-                    },
-                );
+                Quat::from_rotation_y(45.9_f32.to_radians()),
+                Vec3 {
+                    x: x as f32 * dist,
+                    y: y as f32 * dist,
+                    z: -30.0,
+                },
+            );
 
             scene.add_instance(handle, pose);
         }
     }
 
     // Create a lidar description. This is a 256 beam lidar.
-    let lidar_beam = (0..256).map(|f| {
-        let angle = 3.14 * f as f32 / 256.0;
-        BeamDirection::new([0.0, angle.sin(), angle.cos()])
-    }).collect::<Vec<_>>();
+    let lidar_beam = (0..256)
+        .map(|f| {
+            let angle = 3.14 * f as f32 / 256.0;
+            BeamDirection::new([0.0, angle.sin(), angle.cos()])
+        })
+        .collect::<Vec<_>>();
 
-    let lidar_desc = LidarDescription { vectors: lidar_beam };
+    let lidar_desc = LidarDescription {
+        vectors: lidar_beam,
+    };
     let lidar_handle = scene.add_lidar(lidar_desc);
-    
+
     /// Set the lidar pose in the scene
-    scene.set_lidar_pose(lidar_handle, Affine3A::from_rotation_translation(
-        Quat::from_rotation_y(0_f32.to_radians()),
-        Vec3 {
-            x: 0.0,
-            y: 0.0,
-            z: 0.0,
-        },
-    ));
+    scene.set_lidar_pose(
+        lidar_handle,
+        Affine3A::from_rotation_translation(
+            Quat::from_rotation_y(0_f32.to_radians()),
+            Vec3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
+        ),
+    );
 
     // Render context creates a new GPU instance and a new device.
     let render_context = RenderContext::new(wgpu::Instance::default()).await;
-    
+
     // This will render the scene and return the lidar returns.
     scene.get_lidar_returns(&render_context).await;
 
