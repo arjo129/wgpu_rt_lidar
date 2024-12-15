@@ -116,8 +116,12 @@ async fn main() {
     let render_context = RenderContext::new(wgpu::Instance::default()).await;
 
     // This will render the scene and return the lidar returns.
+    // Rust timer
+    let start = std::time::Instant::now();
     scene.get_lidar_returns(&render_context).await;
-
+    println!("Time: {:?}", start.elapsed());
     // Do it second time
+    let start = std::time::Instant::now();
     scene.get_lidar_returns(&render_context).await;
+    println!("Time 2 {:?}", start.elapsed());
 }

@@ -55,10 +55,11 @@ struct RaytracePipeline {
     tlas_package: wgpu::TlasPackage,
     staging_buffer: wgpu::Buffer,
     storage_buffer: wgpu::Buffer,
+    lidar_position_buf: wgpu::Buffer,
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
+#[derive(Clone, Copy, Pod, Zeroable, Debug)]
 pub struct BeamDirection {
     pub directions: [f32; 3],
 }
@@ -73,7 +74,7 @@ pub struct LidarDescription {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
+#[derive(Clone, Copy, Pod, Zeroable, Debug)]
 struct GPULidarBeamId {
     direction: BeamDirection,
     lidar_id: u32,
@@ -149,7 +150,6 @@ impl LiDARRenderScene {
                 ));
             }
             self.tlas_obj_to_update.clear();
-            //self.raytrace(rc, blas_scene);
 
             let mut encoder = rc
                 .device
@@ -268,14 +268,15 @@ impl LiDARRenderScene {
         let lidar_beams = self
             .lidars
             .iter()
-            .map(|(desc, pose)| {
+            .enumerate()
+            .map(|(lidar_id, (desc, pose))| {
                 let mut beams = Vec::new();
-                for (id, beam) in desc.vectors.iter().enumerate() {
+                for beam in desc.vectors.iter() {
                     // Do this in the shader itself.
                     // let direction = pose.transform_vector3(Vec3::new(beam.directions[0], beam.directions[1], beam.directions[2]));
                     beams.push(GPULidarBeamId {
                         direction: *beam,
-                        lidar_id: id as u32,
+                        lidar_id: lidar_id as u32,
                     });
                 }
                 beams
@@ -283,12 +284,36 @@ impl LiDARRenderScene {
             .flatten()
             .collect::<Vec<GPULidarBeamId>>();
 
+        //println!("Lidar beams: {:?}", lidar_beams);
+
         // Create a buffer of lidar beams
         let lidar_buffer = rc
             .device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("Lidar Buffer"),
                 contents: bytemuck::cast_slice(&lidar_beams),
+                usage: wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::COPY_DST
+                    | wgpu::BufferUsages::COPY_SRC,
+            });
+        
+        let mut lidar_positions = self
+            .lidars
+            .iter()
+            .map(|(_, pose)| {
+               affine_to_rows(pose)})
+            .collect::<Vec<[f32; 12]>>();
+        // Padding
+        while lidar_positions.len() < 2 {
+            lidar_positions.push([2.0; 12]);
+        }
+
+
+        let lidar_position_buf = rc
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Lidar Position Buffer"),
+                contents: bytemuck::cast_slice(&lidar_positions),
                 usage: wgpu::BufferUsages::STORAGE
                     | wgpu::BufferUsages::COPY_DST
                     | wgpu::BufferUsages::COPY_SRC,
@@ -311,6 +336,10 @@ impl LiDARRenderScene {
                     binding: 2,
                     resource: lidar_buffer.as_entire_binding(),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: lidar_position_buf.as_entire_binding(),
+                },
             ],
         });
 
@@ -330,22 +359,23 @@ impl LiDARRenderScene {
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 
+        let ve: Vec<_> = blas_scene.blases.iter().map(|b| wgpu::BlasBuildEntry {
+            blas: b,
+            geometry: wgpu::BlasGeometries::TriangleGeometries(vec![
+                wgpu::BlasTriangleGeometry {
+                    size: &blas_scene.blas_geo_size_descs[0],
+                    vertex_buffer: &blas_scene.vertex_buf,
+                    first_vertex: 0,
+                    vertex_stride: std::mem::size_of::<Vertex>() as u64,
+                    index_buffer: Some(&blas_scene.index_buf),
+                    index_buffer_offset: Some(0),
+                    transform_buffer: None,
+                    transform_buffer_offset: None,
+                },
+            ]),
+        }).collect();
         encoder.build_acceleration_structures(
-            std::iter::once(&wgpu::BlasBuildEntry {
-                blas: &blas_scene.blases[0],
-                geometry: wgpu::BlasGeometries::TriangleGeometries(vec![
-                    wgpu::BlasTriangleGeometry {
-                        size: &blas_scene.blas_geo_size_descs[0],
-                        vertex_buffer: &blas_scene.vertex_buf,
-                        first_vertex: 0,
-                        vertex_stride: std::mem::size_of::<Vertex>() as u64,
-                        index_buffer: Some(&blas_scene.index_buf),
-                        index_buffer_offset: Some(0),
-                        transform_buffer: None,
-                        transform_buffer_offset: None,
-                    },
-                ]),
-            }),
+            ve.iter(),
             std::iter::once(&tlas_package),
         );
 
@@ -403,6 +433,7 @@ impl LiDARRenderScene {
             tlas_package,
             staging_buffer,
             storage_buffer,
+            lidar_position_buf
         });
     }
 
