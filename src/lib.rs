@@ -90,7 +90,7 @@ pub struct LiDARRenderScene {
     raytrace_pipeline: Option<RaytracePipeline>,
     instances: Vec<(ObjectHandle, glam::Affine3A)>,
     lidars: Vec<(LidarDescription, glam::Affine3A)>,
-    lidar_pose_buff_needs_update: bool
+    lidar_pose_buff_needs_update: bool,
 }
 
 impl LiDARRenderScene {
@@ -140,134 +140,132 @@ impl LiDARRenderScene {
             panic!("BLAS not built");
         };
         if !self.need_tlas_rebuild {
-        if let Some(ref mut pipeline) = self.raytrace_pipeline {
-            let mut encoder = rc
-                .device
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-            
-            if self.tlas_obj_to_update.len() != 0 {
-                for tlas_id in &self.tlas_obj_to_update {
-                    pipeline.tlas_package[*tlas_id] = Some(wgpu::TlasInstance::new(
-                        &blas_scene.blases[self.instances[*tlas_id].0 .0],
-                        affine_to_rows(&self.instances[*tlas_id].1),
-                        0,
-                        0xff,
-                    ));
-                }
-                self.tlas_obj_to_update.clear();
-
-               
-
-                encoder.build_acceleration_structures(
-                    std::iter::empty(),
-                    std::iter::once(&pipeline.tlas_package),
-                );
-            }
-
-            if self.lidar_pose_buff_needs_update
-            {
-                let mut lidar_positions = self
-                    .lidars
-                    .iter()
-                    .map(|(_, pose)| {
-                        affine_to_rows(pose)})
-                    .collect::<Vec<[f32; 12]>>();
-                // Padding
-                while lidar_positions.len() < 2 {
-                    lidar_positions.push([2.0; 12]);
-                }
-
-                let lidar_position_buf = rc
+            if let Some(ref mut pipeline) = self.raytrace_pipeline {
+                let mut encoder = rc
                     .device
-                    .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                        label: Some("Lidar Position Buffer"),
-                        contents: bytemuck::cast_slice(&lidar_positions),
-                        usage: wgpu::BufferUsages::STORAGE
-                            | wgpu::BufferUsages::COPY_DST
-                            | wgpu::BufferUsages::COPY_SRC,
+                    .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+
+                if self.tlas_obj_to_update.len() != 0 {
+                    for tlas_id in &self.tlas_obj_to_update {
+                        pipeline.tlas_package[*tlas_id] = Some(wgpu::TlasInstance::new(
+                            &blas_scene.blases[self.instances[*tlas_id].0 .0],
+                            affine_to_rows(&self.instances[*tlas_id].1),
+                            0,
+                            0xff,
+                        ));
+                    }
+                    self.tlas_obj_to_update.clear();
+
+                    encoder.build_acceleration_structures(
+                        std::iter::empty(),
+                        std::iter::once(&pipeline.tlas_package),
+                    );
+                }
+
+                if self.lidar_pose_buff_needs_update {
+                    let mut lidar_positions = self
+                        .lidars
+                        .iter()
+                        .map(|(_, pose)| affine_to_rows(pose))
+                        .collect::<Vec<[f32; 12]>>();
+                    // Padding
+                    while lidar_positions.len() < 2 {
+                        lidar_positions.push([2.0; 12]);
+                    }
+
+                    let lidar_position_buf =
+                        rc.device
+                            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                                label: Some("Lidar Position Buffer"),
+                                contents: bytemuck::cast_slice(&lidar_positions),
+                                usage: wgpu::BufferUsages::STORAGE
+                                    | wgpu::BufferUsages::COPY_DST
+                                    | wgpu::BufferUsages::COPY_SRC,
+                            });
+                    pipeline.lidar_position_buf = lidar_position_buf;
+                    self.lidar_pose_buff_needs_update = false;
+                    pipeline.bind_group = rc.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                        label: None,
+                        layout: &pipeline.pipeline.get_bind_group_layout(0),
+                        entries: &[
+                            wgpu::BindGroupEntry {
+                                binding: 0,
+                                resource: pipeline.storage_buffer.as_entire_binding(),
+                            },
+                            wgpu::BindGroupEntry {
+                                binding: 1,
+                                resource: wgpu::BindingResource::AccelerationStructure(
+                                    pipeline.tlas_package.tlas(),
+                                ),
+                            },
+                            wgpu::BindGroupEntry {
+                                binding: 2,
+                                resource: pipeline.lidar_beam_buf.as_entire_binding(),
+                            },
+                            wgpu::BindGroupEntry {
+                                binding: 3,
+                                resource: pipeline.lidar_position_buf.as_entire_binding(),
+                            },
+                        ],
                     });
-                pipeline.lidar_position_buf = lidar_position_buf;
-                self.lidar_pose_buff_needs_update = false;
-                pipeline.bind_group = rc.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                    label: None,
-                    layout: &pipeline.pipeline.get_bind_group_layout(0),
-                    entries: &[
-                        wgpu::BindGroupEntry {
-                            binding: 0,
-                            resource: pipeline.storage_buffer.as_entire_binding(),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 1,
-                            resource: wgpu::BindingResource::AccelerationStructure(pipeline.tlas_package.tlas()),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 2,
-                            resource: pipeline.lidar_beam_buf.as_entire_binding(),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 3,
-                            resource: pipeline.lidar_position_buf.as_entire_binding(),
-                        },
-                    ],
-                });
+                }
+
+                {
+                    let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                        label: None,
+                        timestamp_writes: None,
+                    });
+                    cpass.set_pipeline(&pipeline.pipeline);
+                    cpass.set_bind_group(0, Some(&pipeline.bind_group), &[]);
+                    cpass.dispatch_workgroups(256, 1, 1);
+                }
+
+                // Sets adds copy operation to command encoder.
+                // Will copy data from storage buffer on GPU to staging buffer on CPU.
+                encoder.copy_buffer_to_buffer(
+                    &pipeline.storage_buffer,
+                    0,
+                    &pipeline.staging_buffer,
+                    0,
+                    size,
+                );
+
+                // Submits command encoder for processing
+                rc.queue.submit(Some(encoder.finish()));
+
+                // Note that we're not calling `.await` here.
+                let buffer_slice = pipeline.staging_buffer.slice(..);
+                // Sets the buffer up for mapping, sending over the result of the mapping back to us when it is finished.
+                let (sender, receiver) = flume::bounded(1);
+                buffer_slice.map_async(wgpu::MapMode::Read, move |v| sender.send(v).unwrap());
+
+                // Poll the device in a blocking manner so that our future resolves.
+                // In an actual application, `device.poll(...)` should
+                // be called in an event loop or on another thread.
+                rc.device.poll(wgpu::Maintain::wait()).panic_on_timeout();
+
+                // Awaits until `buffer_future` can be read from
+                if let Ok(Ok(())) = receiver.recv_async().await {
+                    // Gets contents of buffer
+                    let data = buffer_slice.get_mapped_range();
+                    // Since contents are got in bytes, this converts these bytes back to u32
+                    let result: Vec<f32> = bytemuck::cast_slice(&data).to_vec();
+
+                    // With the current interface, we have to make sure all mapped views are
+                    // dropped before we unmap the buffer.
+                    drop(data);
+                    pipeline.staging_buffer.unmap(); // Unmaps buffer from memory
+                                                     // If you are familiar with C++ these 2 lines can be thought of similarly to:
+                                                     //   delete myPointer;
+                                                     //   myPointer = NULL;
+                                                     // It effectively frees the memory
+
+                    // Returns data from buffer
+                    println!("{:?}", result);
+                }
+                return;
             }
-
-            {
-                let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                    label: None,
-                    timestamp_writes: None,
-                });
-                cpass.set_pipeline(&pipeline.pipeline);
-                cpass.set_bind_group(0, Some(&pipeline.bind_group), &[]);
-                cpass.dispatch_workgroups(256, 1, 1);
-            }
-
-            // Sets adds copy operation to command encoder.
-            // Will copy data from storage buffer on GPU to staging buffer on CPU.
-            encoder.copy_buffer_to_buffer(
-                &pipeline.storage_buffer,
-                0,
-                &pipeline.staging_buffer,
-                0,
-                size,
-            );
-
-            // Submits command encoder for processing
-            rc.queue.submit(Some(encoder.finish()));
-
-            // Note that we're not calling `.await` here.
-            let buffer_slice = pipeline.staging_buffer.slice(..);
-            // Sets the buffer up for mapping, sending over the result of the mapping back to us when it is finished.
-            let (sender, receiver) = flume::bounded(1);
-            buffer_slice.map_async(wgpu::MapMode::Read, move |v| sender.send(v).unwrap());
-
-            // Poll the device in a blocking manner so that our future resolves.
-            // In an actual application, `device.poll(...)` should
-            // be called in an event loop or on another thread.
-            rc.device.poll(wgpu::Maintain::wait()).panic_on_timeout();
-
-            // Awaits until `buffer_future` can be read from
-            if let Ok(Ok(())) = receiver.recv_async().await {
-                // Gets contents of buffer
-                let data = buffer_slice.get_mapped_range();
-                // Since contents are got in bytes, this converts these bytes back to u32
-                let result: Vec<f32> = bytemuck::cast_slice(&data).to_vec();
-
-                // With the current interface, we have to make sure all mapped views are
-                // dropped before we unmap the buffer.
-                drop(data);
-                pipeline.staging_buffer.unmap(); // Unmaps buffer from memory
-                                                 // If you are familiar with C++ these 2 lines can be thought of similarly to:
-                                                 //   delete myPointer;
-                                                 //   myPointer = NULL;
-                                                 // It effectively frees the memory
-
-                // Returns data from buffer
-                println!("{:?}", result);
-            }
-            return;
         }
-    }
 
         let tlas = rc.device.create_tlas(&wgpu::CreateTlasDescriptor {
             label: None,
@@ -276,7 +274,7 @@ impl LiDARRenderScene {
             max_instances: self.instances.len() as u32,
         });
 
-        let shader= rc
+        let shader = rc
             .device
             .create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some("rt_computer"),
@@ -348,18 +346,16 @@ impl LiDARRenderScene {
                     | wgpu::BufferUsages::COPY_DST
                     | wgpu::BufferUsages::COPY_SRC,
             });
-        
+
         let mut lidar_positions = self
             .lidars
             .iter()
-            .map(|(_, pose)| {
-               affine_to_rows(pose)})
+            .map(|(_, pose)| affine_to_rows(pose))
             .collect::<Vec<[f32; 12]>>();
         // Padding
         while lidar_positions.len() < 2 {
             lidar_positions.push([2.0; 12]);
         }
-
 
         let lidar_position_buf = rc
             .device
@@ -411,25 +407,26 @@ impl LiDARRenderScene {
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 
-        let ve: Vec<_> = blas_scene.blases.iter().map(|b| wgpu::BlasBuildEntry {
-            blas: b,
-            geometry: wgpu::BlasGeometries::TriangleGeometries(vec![
-                wgpu::BlasTriangleGeometry {
-                    size: &blas_scene.blas_geo_size_descs[0],
-                    vertex_buffer: &blas_scene.vertex_buf,
-                    first_vertex: 0,
-                    vertex_stride: std::mem::size_of::<Vertex>() as u64,
-                    index_buffer: Some(&blas_scene.index_buf),
-                    index_buffer_offset: Some(0),
-                    transform_buffer: None,
-                    transform_buffer_offset: None,
-                },
-            ]),
-        }).collect();
-        encoder.build_acceleration_structures(
-            ve.iter(),
-            std::iter::once(&tlas_package),
-        );
+        let ve: Vec<_> = blas_scene
+            .blases
+            .iter()
+            .map(|b| wgpu::BlasBuildEntry {
+                blas: b,
+                geometry: wgpu::BlasGeometries::TriangleGeometries(vec![
+                    wgpu::BlasTriangleGeometry {
+                        size: &blas_scene.blas_geo_size_descs[0],
+                        vertex_buffer: &blas_scene.vertex_buf,
+                        first_vertex: 0,
+                        vertex_stride: std::mem::size_of::<Vertex>() as u64,
+                        index_buffer: Some(&blas_scene.index_buf),
+                        index_buffer_offset: Some(0),
+                        transform_buffer: None,
+                        transform_buffer_offset: None,
+                    },
+                ]),
+            })
+            .collect();
+        encoder.build_acceleration_structures(ve.iter(), std::iter::once(&tlas_package));
 
         {
             let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -489,7 +486,7 @@ impl LiDARRenderScene {
             staging_buffer,
             storage_buffer,
             lidar_position_buf,
-            lidar_beam_buf: lidar_buffer
+            lidar_beam_buf: lidar_buffer,
         });
     }
 
