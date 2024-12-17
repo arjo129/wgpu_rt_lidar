@@ -40,6 +40,6 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
     let intersection = rayQueryGetCommittedIntersection(&rq);
     if (intersection.kind != RAY_QUERY_INTERSECTION_NONE) {
-        v_indices[global_id.x] = intersection.t;
+      v_indices[global_id.x] = intersection.t;
     }
 }

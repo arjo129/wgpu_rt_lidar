@@ -56,6 +56,7 @@ struct RaytracePipeline {
     staging_buffer: wgpu::Buffer,
     storage_buffer: wgpu::Buffer,
     lidar_position_buf: wgpu::Buffer,
+    lidar_beam_buf: wgpu::Buffer,
 }
 
 #[repr(C)]
@@ -89,6 +90,7 @@ pub struct LiDARRenderScene {
     raytrace_pipeline: Option<RaytracePipeline>,
     instances: Vec<(ObjectHandle, glam::Affine3A)>,
     lidars: Vec<(LidarDescription, glam::Affine3A)>,
+    lidar_pose_buff_needs_update: bool
 }
 
 impl LiDARRenderScene {
@@ -114,11 +116,13 @@ impl LiDARRenderScene {
     pub fn add_lidar(&mut self, desc: LidarDescription) -> LidarDescriptionHandle {
         let desc_handle = LidarDescriptionHandle(self.lidars.len());
         self.lidars.push((desc, Affine3A::IDENTITY));
+        self.lidar_pose_buff_needs_update = true;
         desc_handle
     }
 
     pub fn set_lidar_pose(&mut self, handle: LidarDescriptionHandle, pose: glam::Affine3A) {
         self.lidars[handle.0].1 = pose;
+        self.lidar_pose_buff_needs_update = true;
     }
 
     pub fn set_instance_pose(&mut self, handle: InstanceHandle, pose: glam::Affine3A) {
@@ -159,6 +163,54 @@ impl LiDARRenderScene {
                 std::iter::empty(),
                 std::iter::once(&pipeline.tlas_package),
             );
+
+            if self.lidar_pose_buff_needs_update
+            {
+                let mut lidar_positions = self
+                    .lidars
+                    .iter()
+                    .map(|(_, pose)| {
+                        affine_to_rows(pose)})
+                    .collect::<Vec<[f32; 12]>>();
+                // Padding
+                while lidar_positions.len() < 2 {
+                    lidar_positions.push([2.0; 12]);
+                }
+
+                let lidar_position_buf = rc
+                    .device
+                    .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                        label: Some("Lidar Position Buffer"),
+                        contents: bytemuck::cast_slice(&lidar_positions),
+                        usage: wgpu::BufferUsages::STORAGE
+                            | wgpu::BufferUsages::COPY_DST
+                            | wgpu::BufferUsages::COPY_SRC,
+                    });
+                pipeline.lidar_position_buf = lidar_position_buf;
+                self.lidar_pose_buff_needs_update = false;
+                pipeline.bind_group = rc.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: None,
+                    layout: &pipeline.pipeline.get_bind_group_layout(0),
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: pipeline.storage_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::AccelerationStructure(pipeline.tlas_package.tlas()),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: pipeline.lidar_beam_buf.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 3,
+                            resource: pipeline.lidar_position_buf.as_entire_binding(),
+                        },
+                    ],
+                });
+            }
 
             {
                 let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -223,7 +275,7 @@ impl LiDARRenderScene {
             max_instances: self.instances.len() as u32,
         });
 
-        let shader = rc
+        let shader= rc
             .device
             .create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some("rt_computer"),
@@ -252,7 +304,6 @@ impl LiDARRenderScene {
                     | wgpu::BufferUsages::COPY_SRC,
             });
 
-        println!("size: {}", size);
         // Instantiates buffer without data.
         // `usage` of buffer specifies how it can be used:
         //   `BufferUsages::MAP_READ` allows it to be read (outside the shader).
@@ -427,13 +478,16 @@ impl LiDARRenderScene {
             // Returns data from buffer
             println!("{:?}", result);
         }
+
+        self.lidar_pose_buff_needs_update = false;
         self.raytrace_pipeline = Some(RaytracePipeline {
             bind_group: compute_bind_group,
             pipeline: compute_pipeline,
             tlas_package,
             staging_buffer,
             storage_buffer,
-            lidar_position_buf
+            lidar_position_buf,
+            lidar_beam_buf: lidar_buffer
         });
     }
 
