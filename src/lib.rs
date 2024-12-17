@@ -139,30 +139,30 @@ impl LiDARRenderScene {
         let Some(blas_scene) = self.need_blas_rebuild.as_ref() else {
             panic!("BLAS not built");
         };
-
+        if !self.need_tlas_rebuild {
         if let Some(ref mut pipeline) = self.raytrace_pipeline {
-            if self.need_tlas_rebuild {
-                // self.rebuild_tlas(rc, blas_scene);
-            }
-
-            for tlas_id in &self.tlas_obj_to_update {
-                pipeline.tlas_package[*tlas_id] = Some(wgpu::TlasInstance::new(
-                    &blas_scene.blases[self.instances[*tlas_id].0 .0],
-                    affine_to_rows(&self.instances[*tlas_id].1),
-                    0,
-                    0xff,
-                ));
-            }
-            self.tlas_obj_to_update.clear();
-
             let mut encoder = rc
                 .device
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+            
+            if self.tlas_obj_to_update.len() != 0 {
+                for tlas_id in &self.tlas_obj_to_update {
+                    pipeline.tlas_package[*tlas_id] = Some(wgpu::TlasInstance::new(
+                        &blas_scene.blases[self.instances[*tlas_id].0 .0],
+                        affine_to_rows(&self.instances[*tlas_id].1),
+                        0,
+                        0xff,
+                    ));
+                }
+                self.tlas_obj_to_update.clear();
 
-            encoder.build_acceleration_structures(
-                std::iter::empty(),
-                std::iter::once(&pipeline.tlas_package),
-            );
+               
+
+                encoder.build_acceleration_structures(
+                    std::iter::empty(),
+                    std::iter::once(&pipeline.tlas_package),
+                );
+            }
 
             if self.lidar_pose_buff_needs_update
             {
@@ -267,6 +267,7 @@ impl LiDARRenderScene {
             }
             return;
         }
+    }
 
         let tlas = rc.device.create_tlas(&wgpu::CreateTlasDescriptor {
             label: None,
@@ -480,6 +481,7 @@ impl LiDARRenderScene {
         }
 
         self.lidar_pose_buff_needs_update = false;
+        self.need_tlas_rebuild = false;
         self.raytrace_pipeline = Some(RaytracePipeline {
             bind_group: compute_bind_group,
             pipeline: compute_pipeline,
