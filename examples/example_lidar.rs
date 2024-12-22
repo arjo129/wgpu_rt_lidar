@@ -124,4 +124,15 @@ async fn main() {
     let start = std::time::Instant::now();
     scene.get_lidar_returns(&render_context).await;
     println!("Time 2 {:?}", start.elapsed());
+    scene.set_lidar_pose(lidar_handle,  Affine3A::from_rotation_translation(
+        Quat::from_rotation_y(45_f32.to_radians()),
+        Vec3 {
+            x: 2.0,
+            y: 2.0,
+            z: 1.0,
+        },
+    ));
+    let start = std::time::Instant::now();
+    scene.get_lidar_returns(&render_context).await;
+    println!("Time 3 {:?}", start.elapsed());
 }

@@ -41,6 +41,32 @@ fn affine_to_rows(mat: &Affine3A) -> [f32; 12] {
     ]
 }
 
+#[inline]
+fn affine_to_4x4rows(mat: &Affine3A) -> [f32; 16] {
+    let row_0 = mat.matrix3.row(0);
+    let row_1 = mat.matrix3.row(1);
+    let row_2 = mat.matrix3.row(2);
+    let translation = mat.translation;
+    [
+        row_0.x,
+        row_0.y,
+        row_0.z,
+        translation.x,
+        row_1.x,
+        row_1.y,
+        row_1.z,
+        translation.y,
+        row_2.x,
+        row_2.y,
+        row_2.z,
+        translation.z,
+        0.0,
+        0.0,
+        0.0,
+        0.1
+    ]
+}
+
 /// A scene that can be rendered with a ray tracer
 struct BLASScene {
     vertex_buf: wgpu::Buffer,
@@ -163,24 +189,20 @@ impl LiDARRenderScene {
                 }
 
                 if self.lidar_pose_buff_needs_update {
-                    let mut lidar_positions = self
+                    let lidar_positions = self
                         .lidars
                         .iter()
-                        .map(|(_, pose)| affine_to_rows(pose))
-                        .collect::<Vec<[f32; 12]>>();
-                    // Padding
-                    while lidar_positions.len() < 2 {
-                        lidar_positions.push([2.0; 12]);
-                    }
+                        .map(|(_, pose)| affine_to_4x4rows(pose))
+                        .collect::<Vec<[f32; 16]>>();
+                  
+                    println!("Updating Lidar positions: {:?}", lidar_positions);
 
                     let lidar_position_buf =
                         rc.device
                             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                                 label: Some("Lidar Position Buffer"),
                                 contents: bytemuck::cast_slice(&lidar_positions),
-                                usage: wgpu::BufferUsages::STORAGE
-                                    | wgpu::BufferUsages::COPY_DST
-                                    | wgpu::BufferUsages::COPY_SRC,
+                                usage: wgpu::BufferUsages::UNIFORM,
                             });
                     pipeline.lidar_position_buf = lidar_position_buf;
                     self.lidar_pose_buff_needs_update = false;
@@ -269,7 +291,7 @@ impl LiDARRenderScene {
 
         let tlas = rc.device.create_tlas(&wgpu::CreateTlasDescriptor {
             label: None,
-            flags: wgpu::AccelerationStructureFlags::PREFER_FAST_TRACE,
+            flags: wgpu::AccelerationStructureFlags::PREFER_FAST_BUILD,
             update_mode: wgpu::AccelerationStructureUpdateMode::Build,
             max_instances: self.instances.len() as u32,
         });
@@ -350,21 +372,15 @@ impl LiDARRenderScene {
         let mut lidar_positions = self
             .lidars
             .iter()
-            .map(|(_, pose)| affine_to_rows(pose))
-            .collect::<Vec<[f32; 12]>>();
-        // Padding
-        while lidar_positions.len() < 2 {
-            lidar_positions.push([2.0; 12]);
-        }
+            .map(|(_, pose)| affine_to_4x4rows(pose))
+            .collect::<Vec<[f32; 16]>>();
 
         let lidar_position_buf = rc
             .device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("Lidar Position Buffer"),
                 contents: bytemuck::cast_slice(&lidar_positions),
-                usage: wgpu::BufferUsages::STORAGE
-                    | wgpu::BufferUsages::COPY_DST
-                    | wgpu::BufferUsages::COPY_SRC,
+                usage: wgpu::BufferUsages::UNIFORM,
             });
 
         let compute_bind_group_layout = compute_pipeline.get_bind_group_layout(0);
