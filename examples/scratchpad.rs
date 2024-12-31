@@ -92,8 +92,9 @@ fn create_vertices() -> (Vec<Vertex>, Vec<u16>) {
 struct Uniforms {
     view_inverse: Mat4,
     proj_inverse: Mat4,
-    time: f32,
-    padding: [f32; 3],
+    width: u32,
+    height: u32,
+    padding: [f32; 2],
 }
 
 /// If the environment variable `WGPU_ADAPTER_NAME` is set, this function will attempt to
@@ -197,8 +198,9 @@ async fn main() {
         Uniforms {
             view_inverse: view.inverse(),
             proj_inverse: proj.inverse(),
-            time: 0.0,
-            padding: [0.0; 3],
+            width: 256,
+            height: 256,
+            padding: [0.0; 2],
         }
     };
 

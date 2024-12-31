@@ -44,7 +44,8 @@ struct RayIntersection {
 struct Uniforms {
     view_inv: mat4x4<f32>,
     proj_inv: mat4x4<f32>,
-    times: f32,
+    width: u32,
+    height: u32,
 };
 
 @group(0) @binding(0)
@@ -58,7 +59,7 @@ var<storage, read_write> raw_buf: array<f32>;
 
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-    let target_size = vec2<u32>(256,256);
+    let target_size = vec2<u32>(uniforms.width, uniforms.height);
     var color =  vec4<f32>(0.0, 0.0, 0.0, 1.0);
 
 	let pixel_center = vec2<f32>(global_id.xy) + vec2<f32>(0.5);
