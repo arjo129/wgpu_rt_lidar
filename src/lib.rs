@@ -63,7 +63,7 @@ fn affine_to_4x4rows(mat: &Affine3A) -> [f32; 16] {
         0.0,
         0.0,
         0.0,
-        0.1
+        0.1,
     ]
 }
 
@@ -158,7 +158,7 @@ impl LiDARRenderScene {
 
     pub async fn get_lidar_returns(&mut self, rc: &RenderContext) {
         rc.device.push_error_scope(wgpu::ErrorFilter::Validation);
-        
+
         let numbers = vec![0f32; 256];
         let size = size_of_val(numbers.as_slice()) as wgpu::BufferAddress;
         if self.need_blas_rebuild.is_none() {
@@ -169,7 +169,6 @@ impl LiDARRenderScene {
         };
         if !self.need_tlas_rebuild {
             if let Some(ref mut pipeline) = self.raytrace_pipeline {
-               
                 /*if self.tlas_obj_to_update.len() != 0 {
                     for tlas_id in &self.tlas_obj_to_update {
                         pipeline.tlas_package[*tlas_id] = Some(wgpu::TlasInstance::new(
@@ -193,7 +192,6 @@ impl LiDARRenderScene {
                         .iter()
                         .map(|(_, pose)| affine_to_4x4rows(pose))
                         .collect::<Vec<[f32; 16]>>();
-                  
 
                     let lidar_position_buf =
                         rc.device
@@ -203,7 +201,7 @@ impl LiDARRenderScene {
                                 usage: wgpu::BufferUsages::UNIFORM,
                             });
                     pipeline.lidar_position_buf = lidar_position_buf;
-                   // rc.queue.write_buffer(&pipeline.lidar_position_buf, 0, bytemuck::cast_slice(&lidar_positions));
+                    // rc.queue.write_buffer(&pipeline.lidar_position_buf, 0, bytemuck::cast_slice(&lidar_positions));
                     self.lidar_pose_buff_needs_update = false;
                     pipeline.bind_group = rc.device.create_bind_group(&wgpu::BindGroupDescriptor {
                         label: None,
@@ -232,10 +230,13 @@ impl LiDARRenderScene {
                 }
                 rc.queue.submit(None);
                 let mut encoder = rc
-                .device
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+                    .device
+                    .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 
-                encoder.build_acceleration_structures(std::iter::empty(), std::iter::once(&pipeline.tlas_package));
+                encoder.build_acceleration_structures(
+                    std::iter::empty(),
+                    std::iter::once(&pipeline.tlas_package),
+                );
 
                 {
                     let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -247,7 +248,6 @@ impl LiDARRenderScene {
                     cpass.dispatch_workgroups(256, 1, 1);
                 }
 
-                
                 // Sets adds copy operation to command encoder.
                 // Will copy data from storage buffer on GPU to staging buffer on CPU.
                 encoder.copy_buffer_to_buffer(
@@ -321,14 +321,12 @@ impl LiDARRenderScene {
                 });
 
         //   The source of a copy.
-        let storage_buffer = rc
-            .device
-            .create_buffer(&wgpu::BufferDescriptor {
-                label: Some("Storage Buffer"),
-                size: size,
-                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-                mapped_at_creation: false    
-            });
+        let storage_buffer = rc.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Storage Buffer"),
+            size: size,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
 
         // Instantiates buffer without data.
         // `usage` of buffer specifies how it can be used:

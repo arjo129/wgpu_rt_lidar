@@ -4,7 +4,6 @@ use bytemuck_derive::{Pod, Zeroable};
 use glam::{Affine3A, Mat4, Quat, Vec3};
 use wgpu::util::DeviceExt;
 
-
 #[inline]
 fn affine_to_rows(mat: &Affine3A) -> [f32; 12] {
     let row_0 = mat.matrix3.row(0);
@@ -26,8 +25,6 @@ fn affine_to_rows(mat: &Affine3A) -> [f32; 12] {
         translation.z,
     ]
 }
-
-
 
 // from cube
 #[repr(C)]
@@ -90,7 +87,6 @@ fn create_vertices() -> (Vec<Vertex>, Vec<u16>) {
     (vertex_data.to_vec(), index_data.to_vec())
 }
 
-
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct Uniforms {
@@ -99,7 +95,6 @@ struct Uniforms {
     time: f32,
     padding: [f32; 3],
 }
-
 
 /// If the environment variable `WGPU_ADAPTER_NAME` is set, this function will attempt to
 /// initialize the adapter with that name. If it is not set, it will attempt to initialize
@@ -163,31 +158,33 @@ async fn main() {
     let side_count = 8;
     let instance = wgpu::Instance::default();
     let required_features = wgpu::Features::TEXTURE_BINDING_ARRAY
-    | wgpu::Features::STORAGE_RESOURCE_BINDING_ARRAY
-    | wgpu::Features::VERTEX_WRITABLE_STORAGE
-    | wgpu::Features::EXPERIMENTAL_RAY_QUERY
-    | wgpu::Features::EXPERIMENTAL_RAY_TRACING_ACCELERATION_STRUCTURE;
+        | wgpu::Features::STORAGE_RESOURCE_BINDING_ARRAY
+        | wgpu::Features::VERTEX_WRITABLE_STORAGE
+        | wgpu::Features::EXPERIMENTAL_RAY_QUERY
+        | wgpu::Features::EXPERIMENTAL_RAY_TRACING_ACCELERATION_STRUCTURE;
     let required_downlevel_capabilities = wgpu::DownlevelCapabilities::default();
     let adapter = get_adapter_with_capabilities_or_from_env(
         &instance,
         &required_features,
         &required_downlevel_capabilities,
-    ).await;
+    )
+    .await;
 
     let Ok((device, queue)) = adapter
-    .request_device(
-        &wgpu::DeviceDescriptor {
-            label: None,
-            required_features,
-            required_limits: wgpu::Limits::downlevel_defaults(),
-            memory_hints: wgpu::MemoryHints::MemoryUsage,
-        },
-        None,
-    ).await else {
+        .request_device(
+            &wgpu::DeviceDescriptor {
+                label: None,
+                required_features,
+                required_limits: wgpu::Limits::downlevel_defaults(),
+                memory_hints: wgpu::MemoryHints::MemoryUsage,
+            },
+            None,
+        )
+        .await
+    else {
         panic!("Failed to create device");
     };
 
-    
     let mut uniforms = {
         let view = Mat4::look_at_rh(Vec3::new(0.0, 0.0, 2.5), Vec3::ZERO, Vec3::Y);
         let proj = Mat4::perspective_rh(
@@ -277,10 +274,6 @@ async fn main() {
         label: None,
         layout: &compute_bind_group_layout,
         entries: &[
-            //wgpu::BindGroupEntry {
-            //    binding: 0,
-            //    resource: wgpu::BindingResource::TextureView(&rt_view),
-            //},
             wgpu::BindGroupEntry {
                 binding: 0,
                 resource: uniform_buf.as_entire_binding(),
@@ -298,7 +291,6 @@ async fn main() {
     let mut tlas_package = wgpu::TlasPackage::new(tlas);
 
     let dist = 3.0;
-
 
     for x in 0..side_count {
         for y in 0..side_count {
@@ -324,22 +316,19 @@ async fn main() {
     encoder.build_acceleration_structures(
         iter::once(&wgpu::BlasBuildEntry {
             blas: &blas,
-            geometry: wgpu::BlasGeometries::TriangleGeometries(vec![
-                wgpu::BlasTriangleGeometry {
-                    size: &blas_geo_size_desc,
-                    vertex_buffer: &vertex_buf,
-                    first_vertex: 0,
-                    vertex_stride: std::mem::size_of::<Vertex>() as u64,
-                    index_buffer: Some(&index_buf),
-                    index_buffer_offset: Some(0),
-                    transform_buffer: None,
-                    transform_buffer_offset: None,
-                },
-            ]),
+            geometry: wgpu::BlasGeometries::TriangleGeometries(vec![wgpu::BlasTriangleGeometry {
+                size: &blas_geo_size_desc,
+                vertex_buffer: &vertex_buf,
+                first_vertex: 0,
+                vertex_stride: std::mem::size_of::<Vertex>() as u64,
+                index_buffer: Some(&index_buf),
+                index_buffer_offset: Some(0),
+                transform_buffer: None,
+                transform_buffer_offset: None,
+            }]),
         }),
         iter::once(&tlas_package),
     );
-
 
     queue.submit(Some(encoder.finish()));
     device.push_error_scope(wgpu::ErrorFilter::Validation);
@@ -348,8 +337,9 @@ async fn main() {
     for i in 0..3 {
         let anim_time = start_inst.elapsed().as_secs_f64() as f32;
 
-        uniforms.time = i as f32;
-        println!("Time: {}",anim_time);
+        uniforms.view_inverse =
+            Mat4::look_at_rh(Vec3::new(0.0, 0.0, 2.5 + i as f32), Vec3::ZERO, Vec3::Y).inverse();
+        println!("Time: {}", anim_time);
 
         let compute_bind_group_layout = compute_pipeline.get_bind_group_layout(0);
 
@@ -358,20 +348,17 @@ async fn main() {
             contents: bytemuck::cast_slice(&[uniforms]),
             usage: wgpu::BufferUsages::UNIFORM,
         });
-        raw_buf = device.create_buffer(&wgpu::BufferDescriptor { 
-            label: None, 
-            size: (256 * 256 * 4) as u64, 
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC, 
-            mapped_at_creation: false });
+        raw_buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: (256 * 256 * 4) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
 
         compute_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: None,
             layout: &compute_bind_group_layout,
             entries: &[
-                //wgpu::BindGroupEntry {
-                //    binding: 0,
-                //    resource: wgpu::BindingResource::TextureView(&rt_view),
-                //},
                 wgpu::BindGroupEntry {
                     binding: 0,
                     resource: uniform_buf.as_entire_binding(),
@@ -393,7 +380,7 @@ async fn main() {
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-    
+
         let mut encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 
@@ -414,12 +401,11 @@ async fn main() {
         let buffer_slice = staging_buffer.slice(..);
         let (sender, receiver) = flume::bounded(1);
         buffer_slice.map_async(wgpu::MapMode::Read, move |v| sender.send(v).unwrap());
-     
+
         device.poll(wgpu::Maintain::wait()).panic_on_timeout();
-        
+
         receiver.recv().unwrap().unwrap();
 
-     
         {
             let view = buffer_slice.get_mapped_range();
             let result: Vec<f32> = bytemuck::cast_slice(&view).to_vec();
@@ -428,6 +414,5 @@ async fn main() {
             drop(view);
         }
         staging_buffer.unmap();
-
     }
 }
