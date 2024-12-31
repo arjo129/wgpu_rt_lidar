@@ -187,32 +187,6 @@ async fn main() {
         panic!("Failed to create device");
     };
 
-    let rt_target = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("rt_target"),
-        size: wgpu::Extent3d {
-            width:  256,
-            height: 256,
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Rgba8Unorm,
-        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::STORAGE_BINDING,
-        view_formats: &[wgpu::TextureFormat::Rgba8Unorm],
-    });
-
-    let rt_view = rt_target.create_view(&wgpu::TextureViewDescriptor {
-        label: None,
-        format: Some(wgpu::TextureFormat::Rgba8Unorm),
-        dimension: Some(wgpu::TextureViewDimension::D2),
-        aspect: wgpu::TextureAspect::All,
-        base_mip_level: 0,
-        mip_level_count: None,
-        base_array_layer: 0,
-        array_layer_count: None,
-    });
-
     
     let mut uniforms = {
         let view = Mat4::look_at_rh(Vec3::new(0.0, 0.0, 2.5), Vec3::ZERO, Vec3::Y);
@@ -303,20 +277,20 @@ async fn main() {
         label: None,
         layout: &compute_bind_group_layout,
         entries: &[
+            //wgpu::BindGroupEntry {
+            //    binding: 0,
+            //    resource: wgpu::BindingResource::TextureView(&rt_view),
+            //},
             wgpu::BindGroupEntry {
                 binding: 0,
-                resource: wgpu::BindingResource::TextureView(&rt_view),
-            },
-            wgpu::BindGroupEntry {
-                binding: 1,
                 resource: uniform_buf.as_entire_binding(),
             },
             wgpu::BindGroupEntry {
-                binding: 2,
+                binding: 1,
                 resource: wgpu::BindingResource::AccelerationStructure(&tlas),
             },
             wgpu::BindGroupEntry {
-                binding: 3,
+                binding: 2,
                 resource: raw_buf.as_entire_binding(),
             },
         ],
@@ -366,68 +340,6 @@ async fn main() {
         iter::once(&tlas_package),
     );
 
-    
-    /*let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-        label: Some("rt_sampler"),
-        address_mode_u: wgpu::AddressMode::ClampToEdge,
-        address_mode_v: wgpu::AddressMode::ClampToEdge,
-        address_mode_w: wgpu::AddressMode::ClampToEdge,
-        mag_filter: wgpu::FilterMode::Linear,
-        min_filter: wgpu::FilterMode::Linear,
-        mipmap_filter: wgpu::FilterMode::Nearest,
-        ..Default::default()
-    });
-     let blit_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("blit"),
-        source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("blit.wgsl"))),
-    });
-
-    let blit_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("blit"),
-        layout: None,
-        vertex: wgpu::VertexState {
-            module: &blit_shader,
-            entry_point: Some("vs_main"),
-            compilation_options: Default::default(),
-            buffers: &[],
-        },
-        fragment: Some(wgpu::FragmentState {
-            module: &blit_shader,
-            entry_point: Some("fs_main"),
-            compilation_options: Default::default(),
-            targets: &[Some(wgpu::ColorTargetState {
-                format: wgpu::TextureFormat::Rgba8Unorm,
-                blend: Some(wgpu::BlendState::REPLACE),
-                write_mask: wgpu::ColorWrites::ALL,
-            })],
-        }),
-        primitive: wgpu::PrimitiveState {
-            topology: wgpu::PrimitiveTopology::TriangleList,
-            ..Default::default()
-        },
-        depth_stencil: None,
-        multisample: wgpu::MultisampleState::default(),
-        multiview: None,
-        cache: None,
-    });
-
-    let blit_bind_group_layout = blit_pipeline.get_bind_group_layout(0);
-
-    let blit_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: None,
-        layout: &blit_bind_group_layout,
-        entries: &[
-            wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::TextureView(&rt_view),
-            },
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: wgpu::BindingResource::Sampler(&sampler),
-            },
-        ],
-    });*/
-
 
     queue.submit(Some(encoder.finish()));
     device.push_error_scope(wgpu::ErrorFilter::Validation);
@@ -448,7 +360,7 @@ async fn main() {
         });
         raw_buf = device.create_buffer(&wgpu::BufferDescriptor { 
             label: None, 
-            size: (rt_target.width() * rt_target.height() * 4) as u64, 
+            size: (256 * 256 * 4) as u64, 
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC, 
             mapped_at_creation: false });
 
@@ -456,20 +368,20 @@ async fn main() {
             label: None,
             layout: &compute_bind_group_layout,
             entries: &[
+                //wgpu::BindGroupEntry {
+                //    binding: 0,
+                //    resource: wgpu::BindingResource::TextureView(&rt_view),
+                //},
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&rt_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
                     resource: uniform_buf.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
-                    binding: 2,
+                    binding: 1,
                     resource: wgpu::BindingResource::AccelerationStructure(&tlas_package.tlas()),
                 },
                 wgpu::BindGroupEntry {
-                    binding: 3,
+                    binding: 2,
                     resource: raw_buf.as_entire_binding(),
                 },
             ],
@@ -494,7 +406,7 @@ async fn main() {
             });
             cpass.set_pipeline(&compute_pipeline);
             cpass.set_bind_group(0, Some(&compute_bind_group), &[]);
-            cpass.dispatch_workgroups(rt_target.width() / 8, rt_target.height() / 8, 1);
+            cpass.dispatch_workgroups(256 / 8, 256 / 8, 1);
         }
         encoder.copy_buffer_to_buffer(&raw_buf, 0, &staging_buffer, 0, staging_buffer.size());
 

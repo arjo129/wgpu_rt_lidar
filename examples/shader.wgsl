@@ -48,20 +48,17 @@ struct Uniforms {
 };
 
 @group(0) @binding(0)
-var output: texture_storage_2d<rgba8unorm, write>;
-
-@group(0) @binding(1)
 var<uniform> uniforms: Uniforms;
 
-@group(0) @binding(2)
+@group(0) @binding(1)
 var acc_struct: acceleration_structure;
 
-@group(0) @binding(3)
+@group(0) @binding(2)
 var<storage, read_write> raw_buf: array<f32>;
 
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-    let target_size = textureDimensions(output);
+    let target_size = vec2<u32>(256,256);
     var color =  vec4<f32>(0.0, 0.0, 0.0, 1.0);
 
 	let pixel_center = vec2<f32>(global_id.xy) + vec2<f32>(0.5);
@@ -81,6 +78,4 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         color = vec4<f32>(intersection.t / 200.0, intersection.t / 200.0, intersection.t / 200.0, 1.0);
         raw_buf[global_id.x * target_size.y + global_id.y] = intersection.t;
     }
-
-    textureStore(output, global_id.xy, color);
 }
