@@ -58,6 +58,8 @@ fn create_vertices() -> (Vec<Vertex>, Vec<u16>) {
 
 #[tokio::main]
 async fn main() {
+
+   
     let mut scene = LiDARRenderScene::new();
     let (vertex_data, index_data) = create_vertices();
 
@@ -117,7 +119,7 @@ async fn main() {
 
     // This will render the scene and return the lidar returns.
     // Rust timer
-    let start = std::time::Instant::now();
+    /*let start = std::time::Instant::now();
     scene.get_lidar_returns(&render_context).await;
     println!("Time: {:?}", start.elapsed());
     // Do it second time
@@ -134,5 +136,18 @@ async fn main() {
     ));
     let start = std::time::Instant::now();
     scene.get_lidar_returns(&render_context).await;
-    println!("Time 3 {:?}", start.elapsed());
+    println!("Time 3 {:?}", start.elapsed());*/
+    for i in 0..5000 {
+        scene.set_lidar_pose(lidar_handle,  Affine3A::from_rotation_translation(
+            Quat::from_rotation_y(45_f32.to_radians()),
+            Vec3 {
+                x: 2.0,
+                y: 2.0,
+                z: i as f32,
+            },
+        ));
+        let start = std::time::Instant::now();
+        scene.get_lidar_returns(&render_context).await;
+        println!("Time 3 {:?}", start.elapsed());
+    }
 }

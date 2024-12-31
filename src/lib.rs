@@ -157,6 +157,8 @@ impl LiDARRenderScene {
     }
 
     pub async fn get_lidar_returns(&mut self, rc: &RenderContext) {
+        rc.device.push_error_scope(wgpu::ErrorFilter::Validation);
+        
         let numbers = vec![0f32; 256];
         let size = size_of_val(numbers.as_slice()) as wgpu::BufferAddress;
         if self.need_blas_rebuild.is_none() {
@@ -167,11 +169,8 @@ impl LiDARRenderScene {
         };
         if !self.need_tlas_rebuild {
             if let Some(ref mut pipeline) = self.raytrace_pipeline {
-                let mut encoder = rc
-                    .device
-                    .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-
-                if self.tlas_obj_to_update.len() != 0 {
+               
+                /*if self.tlas_obj_to_update.len() != 0 {
                     for tlas_id in &self.tlas_obj_to_update {
                         pipeline.tlas_package[*tlas_id] = Some(wgpu::TlasInstance::new(
                             &blas_scene.blases[self.instances[*tlas_id].0 .0],
@@ -186,7 +185,7 @@ impl LiDARRenderScene {
                         std::iter::empty(),
                         std::iter::once(&pipeline.tlas_package),
                     );
-                }
+                }*/
 
                 if self.lidar_pose_buff_needs_update {
                     let lidar_positions = self
@@ -195,7 +194,6 @@ impl LiDARRenderScene {
                         .map(|(_, pose)| affine_to_4x4rows(pose))
                         .collect::<Vec<[f32; 16]>>();
                   
-                    println!("Updating Lidar positions: {:?}", lidar_positions);
 
                     let lidar_position_buf =
                         rc.device
@@ -205,6 +203,7 @@ impl LiDARRenderScene {
                                 usage: wgpu::BufferUsages::UNIFORM,
                             });
                     pipeline.lidar_position_buf = lidar_position_buf;
+                   // rc.queue.write_buffer(&pipeline.lidar_position_buf, 0, bytemuck::cast_slice(&lidar_positions));
                     self.lidar_pose_buff_needs_update = false;
                     pipeline.bind_group = rc.device.create_bind_group(&wgpu::BindGroupDescriptor {
                         label: None,
@@ -231,6 +230,12 @@ impl LiDARRenderScene {
                         ],
                     });
                 }
+                rc.queue.submit(None);
+                let mut encoder = rc
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+
+                encoder.build_acceleration_structures(std::iter::empty(), std::iter::once(&pipeline.tlas_package));
 
                 {
                     let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -242,6 +247,7 @@ impl LiDARRenderScene {
                     cpass.dispatch_workgroups(256, 1, 1);
                 }
 
+                
                 // Sets adds copy operation to command encoder.
                 // Will copy data from storage buffer on GPU to staging buffer on CPU.
                 encoder.copy_buffer_to_buffer(
@@ -317,12 +323,11 @@ impl LiDARRenderScene {
         //   The source of a copy.
         let storage_buffer = rc
             .device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            .create_buffer(&wgpu::BufferDescriptor {
                 label: Some("Storage Buffer"),
-                contents: bytemuck::cast_slice(&numbers),
-                usage: wgpu::BufferUsages::STORAGE
-                    | wgpu::BufferUsages::COPY_DST
-                    | wgpu::BufferUsages::COPY_SRC,
+                size: size,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+                mapped_at_creation: false    
             });
 
         // Instantiates buffer without data.
@@ -380,7 +385,7 @@ impl LiDARRenderScene {
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("Lidar Position Buffer"),
                 contents: bytemuck::cast_slice(&lidar_positions),
-                usage: wgpu::BufferUsages::UNIFORM,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             });
 
         let compute_bind_group_layout = compute_pipeline.get_bind_group_layout(0);
@@ -409,7 +414,7 @@ impl LiDARRenderScene {
 
         let mut tlas_package = wgpu::TlasPackage::new(tlas);
 
-        // TODO(arjo): Rewrite the folloring to use the instancing API
+        // TODO(arjo): Rewrite the following to use the instancing API
         for x in 0..self.instances.len() {
             tlas_package[x] = Some(wgpu::TlasInstance::new(
                 &blas_scene.blases[self.instances[x].0 .0],
