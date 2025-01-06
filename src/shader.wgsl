@@ -15,7 +15,7 @@ var<storage, read> lidar_beam: array<LidarBeam>;
 @group(0) @binding(3)
 var<uniform> lidar_position: mat4x4f;
 
-@compute @workgroup_size(256, 1)
+@compute @workgroup_size(1, 1)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let m_origin = vec3f(lidar_position[0][3], 
             lidar_position[1][3] , 
