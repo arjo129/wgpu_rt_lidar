@@ -155,10 +155,15 @@ async fn get_adapter_with_capabilities_or_from_env(
     }
 }
 
+struct AssetMesh {
+    vertex_buf: Vec<Vertex>,
+    index_buf: Vec<u16>,
+}
+
 struct RayTraceScene {
     vertex_buf: wgpu::Buffer,
     index_buf: wgpu::Buffer,
-    blas: wgpu::Blas,
+    blas: Vec<wgpu::Blas>,
     depth_camera_pipeline: wgpu::ComputePipeline,
     compute_bind_group: wgpu::BindGroup,
     uniforms: Uniforms,
@@ -169,7 +174,7 @@ struct RayTraceScene {
 
 
 impl RayTraceScene {
-    async fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
+    async fn new(device: &wgpu::Device, queue: &wgpu::Queue, assets: &Vec<AssetMesh>) -> Self {
         let side_count = 8;
 
         let mut uniforms = {
@@ -202,7 +207,13 @@ impl RayTraceScene {
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
         });
 
-        let (vertex_data, index_data) = create_vertices();
+        let (vertex_data, index_data):(Vec<_>, Vec<u16>) = assets.iter().fold(
+            (vec![], vec![]), |(vertex_buf, index_buf), asset| {
+                let index_offset = vertex_buf.len() as u16;
+                let new_offsets =asset.index_buf.iter().map(|x| x + index_offset).collect::<Vec<u16>>();
+                (vertex_buf.iter().chain(asset.vertex_buf.iter()).cloned().collect::<Vec<Vertex>>(), 
+                index_buf.iter().chain(new_offsets.iter()).cloned().collect::<Vec<u16>>())
+            });//create_vertices();
 
         let vertex_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex Buffer"),
@@ -224,7 +235,7 @@ impl RayTraceScene {
             flags: wgpu::AccelerationStructureGeometryFlags::OPAQUE,
         };
 
-        let blas = device.create_blas(
+        let blas = vec![device.create_blas(
             &wgpu::CreateBlasDescriptor {
                 label: None,
                 flags: wgpu::AccelerationStructureFlags::PREFER_FAST_TRACE,
@@ -233,7 +244,7 @@ impl RayTraceScene {
             wgpu::BlasGeometrySizeDescriptors::Triangles {
                 descriptors: vec![blas_geo_size_desc.clone()],
             },
-        );
+        )];
 
         let tlas = device.create_tlas(&wgpu::CreateTlasDescriptor {
             label: None,
@@ -283,7 +294,7 @@ impl RayTraceScene {
         for x in 0..side_count {
             for y in 0..side_count {
                 tlas_package[(x + y * side_count) as usize] = Some(wgpu::TlasInstance::new(
-                    &blas,
+                    &blas[0],
                     affine_to_rows(&Affine3A::from_rotation_translation(
                         Quat::from_rotation_y(45.9_f32.to_radians()),
                         Vec3 {
@@ -303,7 +314,7 @@ impl RayTraceScene {
 
         encoder.build_acceleration_structures(
             iter::once(&wgpu::BlasBuildEntry {
-                blas: &blas,
+                blas: &blas[0],
                 geometry: wgpu::BlasGeometries::TriangleGeometries(vec![wgpu::BlasTriangleGeometry {
                     size: &blas_geo_size_desc,
                     vertex_buffer: &vertex_buf,
@@ -334,7 +345,7 @@ impl RayTraceScene {
         }
     }
 
-    async fn render_depth_camera(&mut self, i: i64, device: &wgpu::Device, queue: &wgpu::Queue, view_matrix: Mat4) -> Vec<f32> {
+    async fn render_depth_camera(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, view_matrix: Mat4) -> Vec<f32> {
 
         self.uniforms.view_inverse =
            view_matrix.inverse();
@@ -450,8 +461,14 @@ async fn main() {
         panic!("Failed to create device");
     };
 
-    let mut rt = RayTraceScene::new(&device, &queue).await;
+    let (vert_buf, indices) = create_vertices();
+    let cube = AssetMesh {
+        vertex_buf: vert_buf,
+        index_buf: indices,
+    };
+    let mut rt = RayTraceScene::new(&device, &queue, &vec![cube]).await;
     for i in 0..3 {
-        rt.render_depth_camera(i, &device, &queue,  Mat4::look_at_rh(Vec3::new(0.0, 0.0, 2.5 + i as f32), Vec3::ZERO, Vec3::Y)).await;
+        let res = rt.render_depth_camera(&device, &queue,  Mat4::look_at_rh(Vec3::new(0.0, 0.0, 2.5 + i as f32), Vec3::ZERO, Vec3::Y)).await;
+        println!("{:?}", res.iter().fold(0.0, |acc, x| x.max(acc)));
     }
 }
