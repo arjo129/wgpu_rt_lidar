@@ -160,6 +160,11 @@ struct AssetMesh {
     index_buf: Vec<u16>,
 }
 
+struct Instance {
+    asset_mesh_index: usize,
+    transform: Affine3A,
+}
+
 struct RayTraceScene {
     vertex_buf: wgpu::Buffer,
     index_buf: wgpu::Buffer,
@@ -174,7 +179,7 @@ struct RayTraceScene {
 
 
 impl RayTraceScene {
-    async fn new(device: &wgpu::Device, queue: &wgpu::Queue, assets: &Vec<AssetMesh>) -> Self {
+    async fn new(device: &wgpu::Device, queue: &wgpu::Queue, assets: &Vec<AssetMesh>, instances: &Vec<Instance>) -> Self {
         let side_count = 8;
 
         let mut uniforms = {
@@ -289,24 +294,13 @@ impl RayTraceScene {
         });
         let mut tlas_package = wgpu::TlasPackage::new(tlas);
 
-        let dist = 3.0;
-
-        for x in 0..side_count {
-            for y in 0..side_count {
-                tlas_package[(x + y * side_count) as usize] = Some(wgpu::TlasInstance::new(
-                    &blas[0],
-                    affine_to_rows(&Affine3A::from_rotation_translation(
-                        Quat::from_rotation_y(45.9_f32.to_radians()),
-                        Vec3 {
-                            x: x as f32 * dist,
-                            y: y as f32 * dist,
-                            z: -30.0,
-                        },
-                    )),
-                    0,
-                    0xff,
-                ));
-            }
+        for (idx, instance) in instances.iter().enumerate() {
+            tlas_package[idx] = Some(wgpu::TlasInstance::new(
+                &blas[instance.asset_mesh_index],
+                affine_to_rows(&instance.transform),
+                0,
+                0xff,
+            ));
         }
 
         let mut encoder =
@@ -466,7 +460,26 @@ async fn main() {
         vertex_buf: vert_buf,
         index_buf: indices,
     };
-    let mut rt = RayTraceScene::new(&device, &queue, &vec![cube]).await;
+
+    let mut instances = vec![];
+    // Build Scene
+    for x in 0..side_count {
+        for y in 0..side_count {
+            instances.push(Instance {
+                asset_mesh_index: 0,
+                transform: Affine3A::from_rotation_translation(
+                    Quat::from_rotation_y(45.9_f32.to_radians()),
+                    Vec3 {
+                        x: x as f32 * 3.0,
+                        y: y as f32 * 3.0,
+                        z: -30.0,
+                    },
+                ),
+            });
+        }
+    }
+
+    let mut rt = RayTraceScene::new(&device, &queue, &vec![cube], &instances).await;
     for i in 0..3 {
         let res = rt.render_depth_camera(&device, &queue,  Mat4::look_at_rh(Vec3::new(0.0, 0.0, 2.5 + i as f32), Vec3::ZERO, Vec3::Y)).await;
         println!("{:?}", res.iter().fold(0.0, |acc, x| x.max(acc)));
