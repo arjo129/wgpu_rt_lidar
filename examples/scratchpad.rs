@@ -90,7 +90,7 @@ fn create_vertices() -> (Vec<Vertex>, Vec<u16>) {
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
-struct Uniforms {
+struct DepthCameraUniforms {
     view_inverse: Mat4,
     proj_inverse: Mat4,
     width: u32,
@@ -155,6 +155,135 @@ async fn get_adapter_with_capabilities_or_from_env(
     }
 }
 
+struct DepthCamera {
+    pipeline: wgpu::ComputePipeline,
+    uniforms: DepthCameraUniforms,
+    width: u32,
+    height: u32,
+}
+
+impl DepthCamera {
+    async fn new(device: &wgpu::Device, width: u32, height: u32, fov_y: f32) -> Self {
+        let uniforms = {
+            let view = Mat4::look_at_rh(Vec3::new(0.0, 0.0, 2.5), Vec3::ZERO, Vec3::Y);
+            let proj = Mat4::perspective_rh(
+                fov_y.to_radians(),
+                width as f32 / height as f32,
+                0.001,
+                1000.0,
+            );
+
+            DepthCameraUniforms {
+                view_inverse: view.inverse(),
+                proj_inverse: proj.inverse(),
+                width: width,
+                height: height,
+                padding: [0.0; 2],
+            }
+        };
+
+        let camera_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("rt_computer"),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shader.wgsl"))),
+        });
+
+        Self{
+            pipeline: device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("rt"),
+                layout: None,
+                module: &camera_shader,
+                entry_point: Some("main"),
+                compilation_options: Default::default(),
+                cache: None,
+            }),
+            uniforms,
+            width,
+            height,
+        }
+
+    }
+    async fn render_depth_camera(&mut self, scene: &RayTraceScene, device: &wgpu::Device, queue: &wgpu::Queue, view_matrix: Mat4) -> Vec<f32> {
+
+        self.uniforms.view_inverse =
+           view_matrix.inverse();
+
+        let compute_bind_group_layout = self.pipeline.get_bind_group_layout(0);
+
+        let uniform_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Uniform Buffer"),
+            contents: bytemuck::cast_slice(&[self.uniforms]),
+            usage: wgpu::BufferUsages::UNIFORM,
+        });
+        let raw_buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: (self.width * self.height * 4) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+
+        let compute_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: None,
+            layout: &compute_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: uniform_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::AccelerationStructure(&scene.tlas_package.tlas()),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: raw_buf.as_entire_binding(),
+                },
+            ],
+        });
+
+        let staging_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: raw_buf.size(),
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let mut encoder =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+
+        encoder.build_acceleration_structures(iter::empty(), iter::once(&scene.tlas_package));
+
+        {
+            let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: None,
+                timestamp_writes: None,
+            });
+            cpass.set_pipeline(&self.pipeline);
+            cpass.set_bind_group(0, Some(&compute_bind_group), &[]);
+            cpass.dispatch_workgroups(self.width / 8, self.height / 8, 1);
+        }
+        encoder.copy_buffer_to_buffer(&raw_buf, 0, &staging_buffer, 0, staging_buffer.size());
+
+        queue.submit(Some(encoder.finish()));
+        let buffer_slice = staging_buffer.slice(..);
+        let (sender, receiver) = flume::bounded(1);
+        buffer_slice.map_async(wgpu::MapMode::Read, move |v| sender.send(v).unwrap());
+
+        device.poll(wgpu::Maintain::wait()).panic_on_timeout();
+
+        receiver.recv().unwrap().unwrap();
+
+        {
+            let view = buffer_slice.get_mapped_range();
+            let result: Vec<f32> = bytemuck::cast_slice(&view).to_vec();
+            
+            drop(view);
+            staging_buffer.unmap();
+            return result;
+        }
+        
+    }
+}
+
 struct AssetMesh {
     vertex_buf: Vec<Vertex>,
     index_buf: Vec<u16>,
@@ -169,48 +298,11 @@ struct RayTraceScene {
     vertex_buf: wgpu::Buffer,
     index_buf: wgpu::Buffer,
     blas: Vec<wgpu::Blas>,
-    depth_camera_pipeline: wgpu::ComputePipeline,
-    uniforms: Uniforms,
-    uniform_buf: wgpu::Buffer,
-    raw_buf: wgpu::Buffer,
     tlas_package: wgpu::TlasPackage,
 }
 
-
 impl RayTraceScene {
     async fn new(device: &wgpu::Device, queue: &wgpu::Queue, assets: &Vec<AssetMesh>, instances: &Vec<Instance>) -> Self {
-        let side_count = 8;
-
-        let mut uniforms = {
-            let view = Mat4::look_at_rh(Vec3::new(0.0, 0.0, 2.5), Vec3::ZERO, Vec3::Y);
-            let proj = Mat4::perspective_rh(
-                59.0_f32.to_radians(),
-                256 as f32 / 256 as f32,
-                0.001,
-                1000.0,
-            );
-
-            Uniforms {
-                view_inverse: view.inverse(),
-                proj_inverse: proj.inverse(),
-                width: 256,
-                height: 256,
-                padding: [0.0; 2],
-            }
-        };
-
-        let mut uniform_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Uniform Buffer"),
-            contents: bytemuck::cast_slice(&[uniforms]),
-            usage: wgpu::BufferUsages::UNIFORM,
-        });
-
-        let mut raw_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Result Buffer"),
-            contents: bytemuck::cast_slice(&[uniforms]),
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-        });
-
         let (vertex_data, index_data, start_vertex_address, start_indices_address):(Vec<_>, Vec<u16>, Vec<usize>, Vec<usize>) = assets.iter().fold(
             (vec![], vec![], vec![0], vec![0]), |(vertex_buf, index_buf, start_buf, indices_buf), asset| {
                 // TODO
@@ -269,21 +361,7 @@ impl RayTraceScene {
             label: None,
             flags: wgpu::AccelerationStructureFlags::PREFER_FAST_TRACE,
             update_mode: wgpu::AccelerationStructureUpdateMode::Build,
-            max_instances: side_count * side_count,
-        });
-
-        let camera_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("rt_computer"),
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shader.wgsl"))),
-        });
-
-        let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("rt"),
-            layout: None,
-            module: &camera_shader,
-            entry_point: Some("main"),
-            compilation_options: Default::default(),
-            cache: None,
+            max_instances: instances.len() as u32,
         });
 
         let mut tlas_package = wgpu::TlasPackage::new(tlas);
@@ -325,10 +403,6 @@ impl RayTraceScene {
             vertex_buf,
             index_buf, 
             blas, 
-            depth_camera_pipeline: compute_pipeline, 
-            uniforms, 
-            uniform_buf, 
-            raw_buf,
             tlas_package
         }
     }
@@ -354,87 +428,6 @@ impl RayTraceScene {
         encoder.build_acceleration_structures(iter::empty(), iter::once(&self.tlas_package));
 
         Ok(())
-    }
-
-    async fn render_depth_camera(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, view_matrix: Mat4) -> Vec<f32> {
-
-        self.uniforms.view_inverse =
-           view_matrix.inverse();
-
-        let compute_bind_group_layout = self.depth_camera_pipeline.get_bind_group_layout(0);
-
-        self.uniform_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Uniform Buffer"),
-            contents: bytemuck::cast_slice(&[self.uniforms]),
-            usage: wgpu::BufferUsages::UNIFORM,
-        });
-        self.raw_buf = device.create_buffer(&wgpu::BufferDescriptor {
-            label: None,
-            size: (256 * 256 * 4) as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-            mapped_at_creation: false,
-        });
-
-        let compute_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: None,
-            layout: &compute_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: self.uniform_buf.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::AccelerationStructure(&self.tlas_package.tlas()),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: self.raw_buf.as_entire_binding(),
-                },
-            ],
-        });
-
-        let staging_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: None,
-            size: self.raw_buf.size(),
-            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        let mut encoder =
-            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-
-        encoder.build_acceleration_structures(iter::empty(), iter::once(&self.tlas_package));
-
-        {
-            let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: None,
-                timestamp_writes: None,
-            });
-            cpass.set_pipeline(&self.depth_camera_pipeline);
-            cpass.set_bind_group(0, Some(&compute_bind_group), &[]);
-            cpass.dispatch_workgroups(256 / 8, 256 / 8, 1);
-        }
-        encoder.copy_buffer_to_buffer(&self.raw_buf, 0, &staging_buffer, 0, staging_buffer.size());
-
-        queue.submit(Some(encoder.finish()));
-        let buffer_slice = staging_buffer.slice(..);
-        let (sender, receiver) = flume::bounded(1);
-        buffer_slice.map_async(wgpu::MapMode::Read, move |v| sender.send(v).unwrap());
-
-        device.poll(wgpu::Maintain::wait()).panic_on_timeout();
-
-        receiver.recv().unwrap().unwrap();
-
-        {
-            let view = buffer_slice.get_mapped_range();
-            let result: Vec<f32> = bytemuck::cast_slice(&view).to_vec();
-            
-            drop(view);
-            staging_buffer.unmap();
-            return result;
-        }
-        
     }
 }
 
@@ -494,11 +487,15 @@ async fn main() {
         }
     }
 
-    let mut rt = RayTraceScene::new(&device, &queue, &vec![cube], &instances).await;
+    let mut scene = RayTraceScene::new(&device, &queue, &vec![cube], &instances).await;
+
+    let mut depth_camera = DepthCamera::new(&device, 256, 256, 59.0).await;
     
     // Move the camera back, the cubes are at -30
     for i in 0..3 {
-        let res = rt.render_depth_camera(&device, &queue,  Mat4::look_at_rh(Vec3::new(0.0, 0.0, 2.5 + i as f32), Vec3::ZERO, Vec3::Y)).await;
+        let start_time = Instant::now();
+        let res = depth_camera.render_depth_camera(&scene, &device, &queue,  Mat4::look_at_rh(Vec3::new(0.0, 0.0, 2.5 + i as f32), Vec3::ZERO, Vec3::Y)).await;
+        println!("Took {:?} to render a depth frame", start_time.elapsed());
         println!("{:?}", res.iter().fold(0.0, |acc, x| x.max(acc)));
     }
 
@@ -509,9 +506,9 @@ async fn main() {
         updated_instances.push(i);
     }
 
-    rt.set_transform(&device, &queue, &instances, &updated_instances).await.unwrap();
+    scene.set_transform(&device, &queue, &instances, &updated_instances).await.unwrap();
 
-    let res = rt.render_depth_camera(&device, &queue,  Mat4::look_at_rh(Vec3::new(0.0, 0.0, 4.5), Vec3::ZERO, Vec3::Y)).await;
+    let res = depth_camera.render_depth_camera(&scene, &device, &queue,  Mat4::look_at_rh(Vec3::new(0.0, 0.0, 4.5), Vec3::ZERO, Vec3::Y)).await;
     println!("{:?}", res.iter().fold(0.0, |acc, x| x.max(acc)));
 
 }
