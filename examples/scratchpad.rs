@@ -170,7 +170,6 @@ struct RayTraceScene {
     index_buf: wgpu::Buffer,
     blas: Vec<wgpu::Blas>,
     depth_camera_pipeline: wgpu::ComputePipeline,
-    compute_bind_group: wgpu::BindGroup,
     uniforms: Uniforms,
     uniform_buf: wgpu::Buffer,
     raw_buf: wgpu::Buffer,
@@ -287,26 +286,6 @@ impl RayTraceScene {
             cache: None,
         });
 
-        let mut compute_bind_group_layout = compute_pipeline.get_bind_group_layout(0);
-
-        let mut compute_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: None,
-            layout: &compute_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: uniform_buf.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::AccelerationStructure(&tlas),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: raw_buf.as_entire_binding(),
-                },
-            ],
-        });
         let mut tlas_package = wgpu::TlasPackage::new(tlas);
 
         for (idx, instance) in instances.iter().enumerate() {
@@ -347,7 +326,6 @@ impl RayTraceScene {
             index_buf, 
             blas, 
             depth_camera_pipeline: compute_pipeline, 
-            compute_bind_group, 
             uniforms, 
             uniform_buf, 
             raw_buf,
@@ -356,9 +334,26 @@ impl RayTraceScene {
     }
 
     async fn set_transform(&mut self, device: &wgpu::Device, queue: &wgpu::Queue,
-        update_instance: &Instance, idx: usize)
+        update_instance: &Vec<Instance>, idx: &Vec<usize>) -> Result<(), String>
     {
+        if update_instance.len() != idx.len() {
+            return Err("Instance and index length mismatch".to_string());
+        }
 
+        for (i, instance) in update_instance.iter().enumerate() {
+            self.tlas_package[idx[i]] = Some(wgpu::TlasInstance::new(
+                &self.blas[instance.asset_mesh_index],
+                affine_to_rows(&instance.transform),
+                0,
+                0xff,
+            ));
+        }
+
+        let mut encoder =
+        device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        encoder.build_acceleration_structures(iter::empty(), iter::once(&self.tlas_package));
+
+        Ok(())
     }
 
     async fn render_depth_camera(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, view_matrix: Mat4) -> Vec<f32> {
@@ -380,7 +375,7 @@ impl RayTraceScene {
             mapped_at_creation: false,
         });
 
-        self.compute_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        let compute_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: None,
             layout: &compute_bind_group_layout,
             entries: &[
@@ -417,7 +412,7 @@ impl RayTraceScene {
                 timestamp_writes: None,
             });
             cpass.set_pipeline(&self.depth_camera_pipeline);
-            cpass.set_bind_group(0, Some(&self.compute_bind_group), &[]);
+            cpass.set_bind_group(0, Some(&compute_bind_group), &[]);
             cpass.dispatch_workgroups(256 / 8, 256 / 8, 1);
         }
         encoder.copy_buffer_to_buffer(&self.raw_buf, 0, &staging_buffer, 0, staging_buffer.size());
@@ -434,8 +429,6 @@ impl RayTraceScene {
         {
             let view = buffer_slice.get_mapped_range();
             let result: Vec<f32> = bytemuck::cast_slice(&view).to_vec();
-            /*println!("{:?}", result.iter().fold(0.0, |acc, x| x.max(acc)));
-            println!("Recieved");*/
             
             drop(view);
             staging_buffer.unmap();
@@ -502,8 +495,23 @@ async fn main() {
     }
 
     let mut rt = RayTraceScene::new(&device, &queue, &vec![cube], &instances).await;
+    
+    // Move the camera back, the cubes are at -30
     for i in 0..3 {
         let res = rt.render_depth_camera(&device, &queue,  Mat4::look_at_rh(Vec3::new(0.0, 0.0, 2.5 + i as f32), Vec3::ZERO, Vec3::Y)).await;
         println!("{:?}", res.iter().fold(0.0, |acc, x| x.max(acc)));
     }
+
+    let mut updated_instances = vec![];
+    // Move instances forward
+    for i in 0..instances.len() {
+        instances[i].transform.translation.z += -5.0;
+        updated_instances.push(i);
+    }
+
+    rt.set_transform(&device, &queue, &instances, &updated_instances).await.unwrap();
+
+    let res = rt.render_depth_camera(&device, &queue,  Mat4::look_at_rh(Vec3::new(0.0, 0.0, 4.5), Vec3::ZERO, Vec3::Y)).await;
+    println!("{:?}", res.iter().fold(0.0, |acc, x| x.max(acc)));
+
 }
