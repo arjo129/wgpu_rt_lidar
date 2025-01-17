@@ -8,3 +8,5 @@ the use of the experimental API within `wgpu` which in turn wraps Vulkan and Dir
 The API for using the raytracing models is really simple and we provide integration for gazebo here:
 - [TODO] Gazebo integration
 - [TODO] Bevy integration
+
+If you'd like to use this

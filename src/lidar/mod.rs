@@ -9,7 +9,6 @@ pub struct Lidar {
     pipeline: wgpu::ComputePipeline,
     ray_directions: Vec<Vec4>,
     ray_direction_gpu_buf: wgpu::Buffer,
-    shader: wgpu::ShaderModule,
 }
 
 impl Lidar {
@@ -42,7 +41,6 @@ impl Lidar {
                     cache: None,
                 })
             },
-            shader,
         }
     }
 
@@ -70,14 +68,6 @@ impl Lidar {
             mapped_at_creation: false,
         });
 
-        let ray_direction_gpu_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Lidar Buffer"),
-            contents: bytemuck::cast_slice(&self.ray_directions),
-            usage: wgpu::BufferUsages::STORAGE
-                | wgpu::BufferUsages::COPY_DST
-                | wgpu::BufferUsages::COPY_SRC,
-        });
-
         let compute_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: None,
             layout: &compute_bind_group_layout,
@@ -94,7 +84,7 @@ impl Lidar {
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: ray_direction_gpu_buf.as_entire_binding(),
+                    resource: self.ray_direction_gpu_buf.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
