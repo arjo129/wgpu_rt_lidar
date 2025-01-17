@@ -72,7 +72,6 @@ pub fn vertex(pos: [f32; 3]) -> Vertex {
     }
 }
 
-
 /// Representation of a mesh asset.
 pub struct AssetMesh {
     pub vertex_buf: Vec<Vertex>,

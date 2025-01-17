@@ -3,7 +3,9 @@ use std::{borrow::Cow, iter, time::Instant};
 use bytemuck_derive::{Pod, Zeroable};
 use glam::{Affine3A, Mat4, Quat, Vec3, Vec4};
 use wgpu::util::DeviceExt;
-use wgpu_rt_lidar::{depth_camera::DepthCamera, lidar::Lidar, vertex, AssetMesh, Instance, RayTraceScene, Vertex};
+use wgpu_rt_lidar::{
+    depth_camera::DepthCamera, lidar::Lidar, vertex, AssetMesh, Instance, RayTraceScene, Vertex,
+};
 
 /// Lets create a cube with 6 faces
 fn create_vertices() -> (Vec<Vertex>, Vec<u16>) {
@@ -51,7 +53,6 @@ fn create_vertices() -> (Vec<Vertex>, Vec<u16>) {
 
     (vertex_data.to_vec(), index_data.to_vec())
 }
-
 
 /// If the environment variable `WGPU_ADAPTER_NAME` is set, this function will attempt to
 /// initialize the adapter with that name. If it is not set, it will attempt to initialize
@@ -110,8 +111,6 @@ async fn get_adapter_with_capabilities_or_from_env(
     }
 }
 
-
-
 #[tokio::main]
 async fn main() {
     // Set up a wgpu instance and device
@@ -144,7 +143,6 @@ async fn main() {
         panic!("Failed to create device");
     };
 
-
     // Lets add a cube as an asset
     let (vert_buf, indices) = create_vertices();
     let cube = AssetMesh {
@@ -174,7 +172,7 @@ async fn main() {
     let mut scene = RayTraceScene::new(&device, &queue, &vec![cube], &instances).await;
 
     let mut depth_camera = DepthCamera::new(&device, 256, 256, 59.0).await;
-    
+
     let lidar_beams = (0..256)
         .map(|f| {
             let angle = 3.14 * f as f32 / 256.0;
@@ -194,16 +192,18 @@ async fn main() {
                 Mat4::look_at_rh(Vec3::new(0.0, 0.0, 2.5 + i as f32), Vec3::ZERO, Vec3::Y),
             )
             .await;
-        
+
         println!("Took {:?} to render a depth frame", start_time.elapsed());
         println!("{:?}", res.iter().fold(0.0, |acc, x| x.max(acc)));
 
         println!("Rendering lidar beams");
         let start_time = Instant::now();
-        let lidar_pose= Affine3A::from_translation(Vec3::new(2.0, 0.0,i  as f32));
-        let res = lidar.render_lidar_beams(&scene, &device, &queue, &lidar_pose).await;
+        let lidar_pose = Affine3A::from_translation(Vec3::new(2.0, 0.0, i as f32));
+        let res = lidar
+            .render_lidar_beams(&scene, &device, &queue, &lidar_pose)
+            .await;
         println!("Took {:?} to render a lidar frame", start_time.elapsed());
-        println!("{:?}", res);//res.iter().fold(0.0, |acc, x| x.max(acc)));
+        println!("{:?}", res); //res.iter().fold(0.0, |acc, x| x.max(acc)));
     }
 
     let mut updated_instances = vec![];

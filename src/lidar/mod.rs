@@ -13,35 +13,38 @@ pub struct Lidar {
 }
 
 impl Lidar {
-pub async fn new(device: &wgpu::Device, ray_directions: Vec<Vec3>) -> Self {
-    device.push_error_scope(wgpu::ErrorFilter::Validation);
-    let ray_directions: Vec<_>= ray_directions.iter().map(|v| Vec4::new(v.x, v.y, v.z, 0.0)).collect();
-    let ray_direction_gpu_buf = device.create_buffer_init( &wgpu::util::BufferInitDescriptor {
-        label: Some("Lidar Buffer"),
-        contents: bytemuck::cast_slice(&ray_directions),
-        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-    });
-    println!("Lidar buffer size: {:?}", ray_directions.len());
-    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("lidar_computer"),
-        source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shader.wgsl"))),
-    });
-    Self {
-        ray_directions,
-        ray_direction_gpu_buf,
-        pipeline: {
-            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                label: Some("lidar"),
-                layout: None,
-                module: &shader,
-                entry_point: Some("main"),
-                compilation_options: Default::default(),
-                cache: None,
-            })
-        },
-        shader
+    pub async fn new(device: &wgpu::Device, ray_directions: Vec<Vec3>) -> Self {
+        device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let ray_directions: Vec<_> = ray_directions
+            .iter()
+            .map(|v| Vec4::new(v.x, v.y, v.z, 0.0))
+            .collect();
+        let ray_direction_gpu_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Lidar Buffer"),
+            contents: bytemuck::cast_slice(&ray_directions),
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+        });
+        println!("Lidar buffer size: {:?}", ray_directions.len());
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("lidar_computer"),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shader.wgsl"))),
+        });
+        Self {
+            ray_directions,
+            ray_direction_gpu_buf,
+            pipeline: {
+                device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                    label: Some("lidar"),
+                    layout: None,
+                    module: &shader,
+                    entry_point: Some("main"),
+                    compilation_options: Default::default(),
+                    cache: None,
+                })
+            },
+            shader,
+        }
     }
-}
 
     pub async fn render_lidar_beams(
         &mut self,
@@ -67,10 +70,12 @@ pub async fn new(device: &wgpu::Device, ray_directions: Vec<Vec3>) -> Self {
             mapped_at_creation: false,
         });
 
-        let ray_direction_gpu_buf = device.create_buffer_init( &wgpu::util::BufferInitDescriptor {
+        let ray_direction_gpu_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Lidar Buffer"),
             contents: bytemuck::cast_slice(&self.ray_directions),
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST| wgpu::BufferUsages::COPY_SRC,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
         });
 
         let compute_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -105,38 +110,37 @@ pub async fn new(device: &wgpu::Device, ray_directions: Vec<Vec3>) -> Self {
             mapped_at_creation: false,
         });
         let mut encoder =
-        device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 
-    encoder.build_acceleration_structures(iter::empty(), iter::once(&scene.tlas_package));
+        encoder.build_acceleration_structures(iter::empty(), iter::once(&scene.tlas_package));
 
-    {
-        let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: None,
-            timestamp_writes: None,
-        });
-        cpass.set_pipeline(&self.pipeline);
-        cpass.set_bind_group(0, Some(&compute_bind_group), &[]);
-        cpass.dispatch_workgroups(self.ray_directions.len() as u32, 1, 1);
-    }
-    encoder.copy_buffer_to_buffer(&raw_buf, 0, &staging_buffer, 0, staging_buffer.size());
+        {
+            let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: None,
+                timestamp_writes: None,
+            });
+            cpass.set_pipeline(&self.pipeline);
+            cpass.set_bind_group(0, Some(&compute_bind_group), &[]);
+            cpass.dispatch_workgroups(self.ray_directions.len() as u32, 1, 1);
+        }
+        encoder.copy_buffer_to_buffer(&raw_buf, 0, &staging_buffer, 0, staging_buffer.size());
 
-    queue.submit(Some(encoder.finish()));
-    let buffer_slice = staging_buffer.slice(..);
-    let (sender, receiver) = flume::bounded(1);
-    buffer_slice.map_async(wgpu::MapMode::Read, move |v| sender.send(v).unwrap());
+        queue.submit(Some(encoder.finish()));
+        let buffer_slice = staging_buffer.slice(..);
+        let (sender, receiver) = flume::bounded(1);
+        buffer_slice.map_async(wgpu::MapMode::Read, move |v| sender.send(v).unwrap());
 
-    device.poll(wgpu::Maintain::wait()).panic_on_timeout();
+        device.poll(wgpu::Maintain::wait()).panic_on_timeout();
 
-    receiver.recv().unwrap().unwrap();
+        receiver.recv().unwrap().unwrap();
 
-    {
-        let view = buffer_slice.get_mapped_range();
-        let result: Vec<f32> = bytemuck::cast_slice(&view).to_vec();
+        {
+            let view = buffer_slice.get_mapped_range();
+            let result: Vec<f32> = bytemuck::cast_slice(&view).to_vec();
 
-        drop(view);
-        staging_buffer.unmap();
-        return result;
-    }
+            drop(view);
+            staging_buffer.unmap();
+            return result;
+        }
     }
 }
-

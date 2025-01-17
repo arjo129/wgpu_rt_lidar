@@ -26,7 +26,6 @@ pub struct DepthCamera {
 }
 
 impl DepthCamera {
-
     /// Create a new depth camera sensor
     pub async fn new(device: &wgpu::Device, width: u32, height: u32, fov_y: f32) -> Self {
         let uniforms = {
@@ -76,7 +75,6 @@ impl DepthCamera {
         view_matrix: Mat4,
     ) -> Vec<f32> {
         self.uniforms.view_inverse = view_matrix.inverse();
-
 
         let compute_bind_group_layout = self.pipeline.get_bind_group_layout(0);
 
