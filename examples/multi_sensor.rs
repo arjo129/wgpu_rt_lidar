@@ -227,4 +227,10 @@ async fn main() {
         )
         .await;
     println!("{:?}", res.iter().fold(0.0, |acc, x| x.max(acc)));
+
+    let lidar_pose = Affine3A::from_translation(Vec3::new(2.0, 0.0, 3.0));
+    let res = lidar
+            .render_lidar_pointcloud(&scene, &device, &queue, &lidar_pose)
+            .await;
+        println!("{:?}", res); //res.iter().fold(0.0, |acc, x| x.max(acc)));
 }
