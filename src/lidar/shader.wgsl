@@ -21,18 +21,16 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
             lidar_position[1][3] , 
             lidar_position[2][3]);
 
-    //let matrix = mat3x3f(lidar_position[0][0], 
-    //                    lidar_position[0][1], 
-    //                    lidar_position[0][2], 
-    //                    lidar_position[1][0], 
-    //                    lidar_position[1][1], 
-    //                    lidar_position[1][2], 
-    //                    lidar_position[2][0], 
-    //                    lidar_position[2][1], 
-    //                    lidar_position[2][2]);*/
-    //let matrix = mat3x3f(1,0,0,0,1,0,0,0,1);                    
-    let direction = lidar_beam[global_id.x].direction;// * matrix;
-   
+    let matrix = mat3x3f(lidar_position[0][0], 
+                        lidar_position[0][1], 
+                        lidar_position[0][2], 
+                        lidar_position[1][0], 
+                        lidar_position[1][1], 
+                        lidar_position[1][2], 
+                        lidar_position[2][0], 
+                        lidar_position[2][1], 
+                        lidar_position[2][2]);
+    let direction = lidar_beam[global_id.x].direction * matrix;
     var rq: ray_query;
     rayQueryInitialize(&rq, acc_struct, RayDesc(0x0u, 0xFFu, 0.1, 50.0, m_origin, direction));
     rayQueryProceed(&rq);
@@ -41,16 +39,4 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     if (intersection.kind != RAY_QUERY_INTERSECTION_NONE) {
       v_indices[global_id.x] = intersection.t;
     }
-   
-
-    /*if (global_id.x == 0) {
-      v_indices[0] = m_origin.x;
-    }
-    if (global_id.x == 1) {
-      v_indices[1] = m_origin.y;
-    }
-    if (global_id.x == 2) {
-      v_indices[2] = m_origin.z;
-    }*/
-    
 }

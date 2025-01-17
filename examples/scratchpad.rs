@@ -3,101 +3,41 @@ use std::{borrow::Cow, iter, time::Instant};
 use bytemuck_derive::{Pod, Zeroable};
 use glam::{Affine3A, Mat4, Quat, Vec3, Vec4};
 use wgpu::util::DeviceExt;
+use wgpu_rt_lidar::{depth_camera::DepthCamera, lidar::Lidar, vertex, AssetMesh, Instance, RayTraceScene, Vertex};
 
-#[inline]
-fn affine_to_rows(mat: &Affine3A) -> [f32; 12] {
-    let row_0 = mat.matrix3.row(0);
-    let row_1 = mat.matrix3.row(1);
-    let row_2 = mat.matrix3.row(2);
-    let translation = mat.translation;
-    [
-        row_0.x,
-        row_0.y,
-        row_0.z,
-        translation.x,
-        row_1.x,
-        row_1.y,
-        row_1.z,
-        translation.y,
-        row_2.x,
-        row_2.y,
-        row_2.z,
-        translation.z,
-    ]
-}
-#[inline]
-fn affine_to_4x4rows(mat: &Affine3A) -> [f32; 16] {
-    let row_0 = mat.matrix3.row(0);
-    let row_1 = mat.matrix3.row(1);
-    let row_2 = mat.matrix3.row(2);
-    let translation = mat.translation;
-    [
-        row_0.x,
-        row_0.y,
-        row_0.z,
-        translation.x,
-        row_1.x,
-        row_1.y,
-        row_1.z,
-        translation.y,
-        row_2.x,
-        row_2.y,
-        row_2.z,
-        translation.z,
-        0.0,
-        0.0,
-        0.0,
-        0.1,
-    ]
-}
-
-// from cube
-#[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
-struct Vertex {
-    _pos: [f32; 4],
-    _tex_coord: [f32; 2],
-}
-
-fn vertex(pos: [i8; 3], tc: [i8; 2]) -> Vertex {
-    Vertex {
-        _pos: [pos[0] as f32, pos[1] as f32, pos[2] as f32, 1.0],
-        _tex_coord: [tc[0] as f32, tc[1] as f32],
-    }
-}
-
+/// Lets create a cube with 6 faces
 fn create_vertices() -> (Vec<Vertex>, Vec<u16>) {
     let vertex_data = [
         // top (0, 0, 1)
-        vertex([-1, -1, 1], [0, 0]),
-        vertex([1, -1, 1], [1, 0]),
-        vertex([1, 1, 1], [1, 1]),
-        vertex([-1, 1, 1], [0, 1]),
+        vertex([-1.0, -1.0, 1.0]),
+        vertex([1.0, -1.0, 1.0]),
+        vertex([1.0, 1.0, 1.0]),
+        vertex([-1.0, 1.0, 1.0]),
         // bottom (0, 0, -1)
-        vertex([-1, 1, -1], [1, 0]),
-        vertex([1, 1, -1], [0, 0]),
-        vertex([1, -1, -1], [0, 1]),
-        vertex([-1, -1, -1], [1, 1]),
+        vertex([-1.0, 1.0, -1.0]),
+        vertex([1.0, 1.0, -1.0]),
+        vertex([1.0, -1.0, -1.0]),
+        vertex([-1.0, -1.0, -1.0]),
         // right (1, 0, 0)
-        vertex([1, -1, -1], [0, 0]),
-        vertex([1, 1, -1], [1, 0]),
-        vertex([1, 1, 1], [1, 1]),
-        vertex([1, -1, 1], [0, 1]),
+        vertex([1.0, -1.0, -1.0]),
+        vertex([1.0, 1.0, -1.0]),
+        vertex([1.0, 1.0, 1.0]),
+        vertex([1.0, -1.0, 1.0]),
         // left (-1, 0, 0)
-        vertex([-1, -1, 1], [1, 0]),
-        vertex([-1, 1, 1], [0, 0]),
-        vertex([-1, 1, -1], [0, 1]),
-        vertex([-1, -1, -1], [1, 1]),
+        vertex([-1.0, -1.0, 1.0]),
+        vertex([-1.0, 1.0, 1.0]),
+        vertex([-1.0, 1.0, -1.0]),
+        vertex([-1.0, -1.0, -1.0]),
         // front (0, 1, 0)
-        vertex([1, 1, -1], [1, 0]),
-        vertex([-1, 1, -1], [0, 0]),
-        vertex([-1, 1, 1], [0, 1]),
-        vertex([1, 1, 1], [1, 1]),
+        vertex([1.0, 1.0, -1.0]),
+        vertex([-1.0, 1.0, -1.0]),
+        vertex([-1.0, 1.0, 1.0]),
+        vertex([1.0, 1.0, 1.0]),
         // back (0, -1, 0)
-        vertex([1, -1, 1], [0, 0]),
-        vertex([-1, -1, 1], [1, 0]),
-        vertex([-1, -1, -1], [1, 1]),
-        vertex([1, -1, -1], [0, 1]),
+        vertex([1.0, -1.0, 1.0]),
+        vertex([-1.0, -1.0, 1.0]),
+        vertex([-1.0, -1.0, -1.0]),
+        vertex([1.0, -1.0, -1.0]),
     ];
 
     let index_data: &[u16] = &[
@@ -112,15 +52,6 @@ fn create_vertices() -> (Vec<Vertex>, Vec<u16>) {
     (vertex_data.to_vec(), index_data.to_vec())
 }
 
-#[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
-struct DepthCameraUniforms {
-    view_inverse: Mat4,
-    proj_inverse: Mat4,
-    width: u32,
-    height: u32,
-    padding: [f32; 2],
-}
 
 /// If the environment variable `WGPU_ADAPTER_NAME` is set, this function will attempt to
 /// initialize the adapter with that name. If it is not set, it will attempt to initialize
@@ -179,454 +110,11 @@ async fn get_adapter_with_capabilities_or_from_env(
     }
 }
 
-struct Lidar {
-    pipeline: wgpu::ComputePipeline,
-    ray_directions: Vec<Vec4>,
-    ray_direction_gpu_buf: wgpu::Buffer,
-    shader: wgpu::ShaderModule,
-}
 
-impl Lidar {
-async fn new(device: &wgpu::Device, ray_directions: Vec<Vec3>) -> Self {
-    device.push_error_scope(wgpu::ErrorFilter::Validation);
-    let ray_directions: Vec<_>= ray_directions.iter().map(|v| Vec4::new(v.x, v.y, v.z, 0.0)).collect();
-    let ray_direction_gpu_buf = device.create_buffer_init( &wgpu::util::BufferInitDescriptor {
-        label: Some("Lidar Buffer"),
-        contents: bytemuck::cast_slice(&ray_directions),
-        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-    });
-    println!("Lidar buffer size: {:?}", ray_directions.len());
-    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("lidar_computer"),
-        source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("lidar_shader.wgsl"))),
-    });
-    Self {
-        ray_directions,
-        ray_direction_gpu_buf,
-        pipeline: {
-            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                label: Some("lidar"),
-                layout: None,
-                module: &shader,
-                entry_point: Some("main"),
-                compilation_options: Default::default(),
-                cache: None,
-            })
-        },
-        shader
-    }
-}
-
-    async fn render_lidar_beams(
-        &mut self,
-        scene: &RayTraceScene,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        pose: &Affine3A,
-    ) -> Vec<f32> {
-        device.push_error_scope(wgpu::ErrorFilter::Validation);
-        let compute_bind_group_layout = self.pipeline.get_bind_group_layout(0);
-        let mut lidar_positions = affine_to_4x4rows(pose);
-
-        let uniform_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Uniform Buffer"),
-            contents: bytemuck::cast_slice(&lidar_positions),
-            usage: wgpu::BufferUsages::UNIFORM,
-        });
-
-        let raw_buf = device.create_buffer(&wgpu::BufferDescriptor {
-            label: None,
-            size: (self.ray_directions.len() * 4) as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-            mapped_at_creation: false,
-        });
-
-        let ray_direction_gpu_buf = device.create_buffer_init( &wgpu::util::BufferInitDescriptor {
-            label: Some("Lidar Buffer"),
-            contents: bytemuck::cast_slice(&self.ray_directions),
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST| wgpu::BufferUsages::COPY_SRC,
-        });
-
-        let compute_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: None,
-            layout: &compute_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: raw_buf.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::AccelerationStructure(
-                        &scene.tlas_package.tlas(),
-                    ),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: ray_direction_gpu_buf.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: uniform_buf.as_entire_binding(),
-                },
-            ],
-        });
-
-        let staging_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: None,
-            size: raw_buf.size(),
-            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        let mut encoder =
-        device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-
-    encoder.build_acceleration_structures(iter::empty(), iter::once(&scene.tlas_package));
-
-    {
-        let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: None,
-            timestamp_writes: None,
-        });
-        cpass.set_pipeline(&self.pipeline);
-        cpass.set_bind_group(0, Some(&compute_bind_group), &[]);
-        cpass.dispatch_workgroups(self.ray_directions.len() as u32, 1, 1);
-    }
-    encoder.copy_buffer_to_buffer(&raw_buf, 0, &staging_buffer, 0, staging_buffer.size());
-
-    queue.submit(Some(encoder.finish()));
-    let buffer_slice = staging_buffer.slice(..);
-    let (sender, receiver) = flume::bounded(1);
-    buffer_slice.map_async(wgpu::MapMode::Read, move |v| sender.send(v).unwrap());
-
-    device.poll(wgpu::Maintain::wait()).panic_on_timeout();
-
-    receiver.recv().unwrap().unwrap();
-
-    {
-        let view = buffer_slice.get_mapped_range();
-        let result: Vec<f32> = bytemuck::cast_slice(&view).to_vec();
-
-        drop(view);
-        staging_buffer.unmap();
-        return result;
-    }
-    }
-}
-
-
-struct DepthCamera {
-    pipeline: wgpu::ComputePipeline,
-    uniforms: DepthCameraUniforms,
-    width: u32,
-    height: u32,
-}
-
-impl DepthCamera {
-    async fn new(device: &wgpu::Device, width: u32, height: u32, fov_y: f32) -> Self {
-        let uniforms = {
-            let view = Mat4::look_at_rh(Vec3::new(0.0, 0.0, 2.5), Vec3::ZERO, Vec3::Y);
-            let proj = Mat4::perspective_rh(
-                fov_y.to_radians(),
-                width as f32 / height as f32,
-                0.001,
-                1000.0,
-            );
-
-            DepthCameraUniforms {
-                view_inverse: view.inverse(),
-                proj_inverse: proj.inverse(),
-                width: width,
-                height: height,
-                padding: [0.0; 2],
-            }
-        };
-
-        let camera_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("rt_computer"),
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shader.wgsl"))),
-        });
-
-        Self {
-            pipeline: device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                label: Some("rt"),
-                layout: None,
-                module: &camera_shader,
-                entry_point: Some("main"),
-                compilation_options: Default::default(),
-                cache: None,
-            }),
-            uniforms,
-            width,
-            height,
-        }
-    }
-
-    async fn render_depth_camera(
-        &mut self,
-        scene: &RayTraceScene,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        view_matrix: Mat4,
-    ) -> Vec<f32> {
-        self.uniforms.view_inverse = view_matrix.inverse();
-
-
-        let compute_bind_group_layout = self.pipeline.get_bind_group_layout(0);
-
-        let uniform_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Uniform Buffer"),
-            contents: bytemuck::cast_slice(&[self.uniforms]),
-            usage: wgpu::BufferUsages::UNIFORM,
-        });
-        let raw_buf = device.create_buffer(&wgpu::BufferDescriptor {
-            label: None,
-            size: (self.width * self.height * 4) as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-            mapped_at_creation: false,
-        });
-
-        let compute_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: None,
-            layout: &compute_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: uniform_buf.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::AccelerationStructure(
-                        &scene.tlas_package.tlas(),
-                    ),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: raw_buf.as_entire_binding(),
-                },
-            ],
-        });
-
-        let staging_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: None,
-            size: raw_buf.size(),
-            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        let mut encoder =
-            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-
-        encoder.build_acceleration_structures(iter::empty(), iter::once(&scene.tlas_package));
-
-        {
-            let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: None,
-                timestamp_writes: None,
-            });
-            cpass.set_pipeline(&self.pipeline);
-            cpass.set_bind_group(0, Some(&compute_bind_group), &[]);
-            cpass.dispatch_workgroups(self.width / 8, self.height / 8, 1);
-        }
-        encoder.copy_buffer_to_buffer(&raw_buf, 0, &staging_buffer, 0, staging_buffer.size());
-
-        queue.submit(Some(encoder.finish()));
-        let buffer_slice = staging_buffer.slice(..);
-        let (sender, receiver) = flume::bounded(1);
-        buffer_slice.map_async(wgpu::MapMode::Read, move |v| sender.send(v).unwrap());
-
-        device.poll(wgpu::Maintain::wait()).panic_on_timeout();
-
-        receiver.recv().unwrap().unwrap();
-
-        {
-            let view = buffer_slice.get_mapped_range();
-            let result: Vec<f32> = bytemuck::cast_slice(&view).to_vec();
-
-            drop(view);
-            staging_buffer.unmap();
-            return result;
-        }
-    }
-}
-
-struct AssetMesh {
-    vertex_buf: Vec<Vertex>,
-    index_buf: Vec<u16>,
-}
-
-struct Instance {
-    asset_mesh_index: usize,
-    transform: Affine3A,
-}
-
-struct RayTraceScene {
-    vertex_buf: wgpu::Buffer,
-    index_buf: wgpu::Buffer,
-    blas: Vec<wgpu::Blas>,
-    tlas_package: wgpu::TlasPackage,
-}
-
-impl RayTraceScene {
-    async fn new(
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        assets: &Vec<AssetMesh>,
-        instances: &Vec<Instance>,
-    ) -> Self {
-        let (vertex_data, index_data, start_vertex_address, start_indices_address): (
-            Vec<_>,
-            Vec<u16>,
-            Vec<usize>,
-            Vec<usize>,
-        ) = assets.iter().fold(
-            (vec![], vec![], vec![0], vec![0]),
-            |(vertex_buf, index_buf, start_buf, indices_buf), asset| {
-                // TODO
-                let mut start_vertex_buf = start_buf.clone();
-                if let Some(last) = start_vertex_buf.last() {
-                    start_vertex_buf.push(*last + vertex_buf.len());
-                }
-
-                let mut start_indices_buf = indices_buf.clone();
-                if let Some(last) = start_indices_buf.last() {
-                    start_indices_buf.push(*last + indices_buf.len());
-                }
-
-                (
-                    vertex_buf
-                        .iter()
-                        .chain(asset.vertex_buf.iter())
-                        .cloned()
-                        .collect::<Vec<Vertex>>(),
-                    index_buf
-                        .iter()
-                        .chain(asset.index_buf.iter())
-                        .cloned()
-                        .collect::<Vec<u16>>(),
-                    start_vertex_buf,
-                    start_indices_buf,
-                )
-            },
-        ); //create_vertices();
-
-        let vertex_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Vertex Buffer"),
-            contents: bytemuck::cast_slice(&vertex_data),
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::BLAS_INPUT,
-        });
-
-        let index_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Index Buffer"),
-            contents: bytemuck::cast_slice(&index_data),
-            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::BLAS_INPUT,
-        });
-
-        let geometry_desc_sizes = assets
-            .iter()
-            .map(|asset| wgpu::BlasTriangleGeometrySizeDescriptor {
-                vertex_count: asset.vertex_buf.len() as u32,
-                vertex_format: wgpu::VertexFormat::Float32x3,
-                index_count: Some(asset.index_buf.len() as u32),
-                index_format: Some(wgpu::IndexFormat::Uint16),
-                flags: wgpu::AccelerationStructureGeometryFlags::OPAQUE,
-            })
-            .collect::<Vec<_>>();
-
-        let blas = vec![device.create_blas(
-            &wgpu::CreateBlasDescriptor {
-                label: None,
-                flags: wgpu::AccelerationStructureFlags::PREFER_FAST_TRACE,
-                update_mode: wgpu::AccelerationStructureUpdateMode::Build,
-            },
-            wgpu::BlasGeometrySizeDescriptors::Triangles {
-                descriptors: geometry_desc_sizes.clone(),
-            },
-        )];
-
-        let tlas = device.create_tlas(&wgpu::CreateTlasDescriptor {
-            label: None,
-            flags: wgpu::AccelerationStructureFlags::PREFER_FAST_TRACE,
-            update_mode: wgpu::AccelerationStructureUpdateMode::Build,
-            max_instances: instances.len() as u32,
-        });
-
-        let mut tlas_package = wgpu::TlasPackage::new(tlas);
-
-        for (idx, instance) in instances.iter().enumerate() {
-            tlas_package[idx] = Some(wgpu::TlasInstance::new(
-                &blas[instance.asset_mesh_index],
-                affine_to_rows(&instance.transform),
-                0,
-                0xff,
-            ));
-        }
-
-        let mut encoder =
-            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-        let blas_iter: Vec<_> = blas
-            .iter()
-            .enumerate()
-            .map(|(index, blas)| wgpu::BlasBuildEntry {
-                blas,
-                geometry: wgpu::BlasGeometries::TriangleGeometries(vec![
-                    wgpu::BlasTriangleGeometry {
-                        size: &geometry_desc_sizes[index],
-                        vertex_buffer: &vertex_buf,
-                        first_vertex: start_vertex_address[index] as u32,
-                        vertex_stride: std::mem::size_of::<Vertex>() as u64,
-                        index_buffer: Some(&index_buf),
-                        index_buffer_offset: Some(start_indices_address[index] as u64),
-                        transform_buffer: None,
-                        transform_buffer_offset: None,
-                    },
-                ]),
-            })
-            .collect();
-        encoder.build_acceleration_structures(blas_iter.iter(), iter::once(&tlas_package));
-
-        queue.submit(Some(encoder.finish()));
-        device.push_error_scope(wgpu::ErrorFilter::Validation);
-
-        Self {
-            vertex_buf,
-            index_buf,
-            blas,
-            tlas_package,
-        }
-    }
-
-    async fn set_transform(
-        &mut self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        update_instance: &Vec<Instance>,
-        idx: &Vec<usize>,
-    ) -> Result<(), String> {
-        if update_instance.len() != idx.len() {
-            return Err("Instance and index length mismatch".to_string());
-        }
-
-        for (i, instance) in update_instance.iter().enumerate() {
-            self.tlas_package[idx[i]] = Some(wgpu::TlasInstance::new(
-                &self.blas[instance.asset_mesh_index],
-                affine_to_rows(&instance.transform),
-                0,
-                0xff,
-            ));
-        }
-
-        let mut encoder =
-            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-        encoder.build_acceleration_structures(iter::empty(), iter::once(&self.tlas_package));
-
-        Ok(())
-    }
-}
 
 #[tokio::main]
 async fn main() {
-    let side_count = 8;
+    // Set up a wgpu instance and device
     let instance = wgpu::Instance::default();
     let required_features = wgpu::Features::TEXTURE_BINDING_ARRAY
         | wgpu::Features::STORAGE_RESOURCE_BINDING_ARRAY
@@ -655,17 +143,18 @@ async fn main() {
     else {
         panic!("Failed to create device");
     };
-    device.on_uncaptured_error(Box::new(move |err| {
-        panic!("{:?}",err);
-    }));
+
+
+    // Lets add a cube as an asset
     let (vert_buf, indices) = create_vertices();
     let cube = AssetMesh {
         vertex_buf: vert_buf,
         index_buf: indices,
     };
 
+    // Build Scene. Spawn 16 cubes.
+    let side_count = 8;
     let mut instances = vec![];
-    // Build Scene
     for x in 0..side_count {
         for y in 0..side_count {
             instances.push(Instance {
