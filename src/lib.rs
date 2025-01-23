@@ -58,7 +58,7 @@ fn affine_to_4x4rows(mat: &Affine3A) -> [f32; 16] {
 /// A simple vertex with a position.
 /// This is used for loading mesh data into the GPU.
 #[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
+#[derive(Clone, Copy, Pod, Zeroable, Debug)]
 pub struct Vertex {
     _pos: [f32; 4],
     _tex_coord: [f32; 2],
@@ -73,12 +73,14 @@ pub fn vertex(pos: [f32; 3]) -> Vertex {
 }
 
 /// Representation of a mesh asset.
+#[derive(Clone, Debug)]
 pub struct AssetMesh {
     pub vertex_buf: Vec<Vertex>,
     pub index_buf: Vec<u16>,
 }
 
 /// Representation of an instance of a mesh asset.
+#[derive(Clone, Debug)]
 pub struct Instance {
     pub asset_mesh_index: usize,
     pub transform: Affine3A,
