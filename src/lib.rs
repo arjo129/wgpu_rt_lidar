@@ -204,7 +204,7 @@ impl RayTraceScene {
                         first_vertex: start_vertex_address[index] as u32,
                         vertex_stride: std::mem::size_of::<Vertex>() as u64,
                         index_buffer: Some(&index_buf),
-                        first_index: Some(start_indices_address[index] as u64),
+                        first_index: Some(start_indices_address[index] as u32),
                         transform_buffer: None,
                         transform_buffer_offset: None,
                     },
