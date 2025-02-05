@@ -6,7 +6,7 @@ This includes graphics cards like those on the Steam Deck, the intel battlemage 
 the use of the experimental API within `wgpu` which in turn wraps Vulkan and Direct3D.
 
 The API for using the raytracing models is really simple and we provide integration for gazebo here:
-- [TODO] Gazebo integration
+- [Gazebo integration](https://github.com/arjo129/gz_wgpu_rt_lidar)
 - [TODO] Bevy integration
 
 If you'd like to use this
