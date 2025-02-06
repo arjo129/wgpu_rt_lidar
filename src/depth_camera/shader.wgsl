@@ -60,7 +60,6 @@ var<storage, read_write> raw_buf: array<f32>;
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let target_size = vec2<u32>(uniforms.width, uniforms.height);
-    var color =  vec4<f32>(0.0, 0.0, 0.0, 1.0);
 
 	let pixel_center = vec2<f32>(global_id.xy) + vec2<f32>(0.5);
 	let in_uv = pixel_center/vec2<f32>(target_size.xy);
@@ -76,7 +75,6 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
     let intersection = rayQueryGetCommittedIntersection(&rq);
     if (intersection.kind != RAY_QUERY_INTERSECTION_NONE) {
-        color = vec4<f32>(intersection.t / 200.0, intersection.t / 200.0, intersection.t / 200.0, 1.0);
         raw_buf[global_id.x * target_size.y + global_id.y] = intersection.t;
     }
 }
