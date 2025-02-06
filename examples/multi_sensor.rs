@@ -218,6 +218,8 @@ async fn main() {
         .await
         .unwrap();
 
+    println!("Rendering after moving cubes {:?}", Mat4::look_at_rh(Vec3::new(0.0, 0.0, 4.5), Vec3::ZERO, Vec3::Y));
+
     let res = depth_camera
         .render_depth_camera(
             &scene,

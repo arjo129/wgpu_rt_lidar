@@ -1,7 +1,7 @@
 use std::{borrow::Cow, iter};
 
 use bytemuck_derive::{Pod, Zeroable};
-use glam::{Mat4, Vec3};
+use glam::{Mat4, Vec3, Vec4};
 use wgpu::util::DeviceExt;
 
 use crate::RayTraceScene;
@@ -146,6 +146,93 @@ impl DepthCamera {
         {
             let view = buffer_slice.get_mapped_range();
             let result: Vec<f32> = bytemuck::cast_slice(&view).to_vec();
+
+            drop(view);
+            staging_buffer.unmap();
+            return result;
+        }
+    }
+
+    /// Render the depth camera sensor. Returns the depth image as a vector of f32.
+    pub async fn render_depth_camera_pointcloud(
+        &mut self,
+        scene: &RayTraceScene,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        view_matrix: Mat4,
+    ) -> Vec<Vec4> {
+        self.uniforms.view_inverse = view_matrix.inverse();
+
+        let compute_bind_group_layout = self.pipeline.get_bind_group_layout(0);
+
+        let uniform_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Uniform Buffer"),
+            contents: bytemuck::cast_slice(&[self.uniforms]),
+            usage: wgpu::BufferUsages::UNIFORM,
+        });
+        let raw_buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: (self.width * self.height * 4 * 4) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+
+        let compute_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: None,
+            layout: &compute_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: uniform_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::AccelerationStructure(
+                        &scene.tlas_package.tlas(),
+                    ),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: raw_buf.as_entire_binding(),
+                },
+            ],
+        });
+
+        let staging_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: raw_buf.size(),
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let mut encoder =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+
+        encoder.build_acceleration_structures(iter::empty(), iter::once(&scene.tlas_package));
+
+        {
+            let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: None,
+                timestamp_writes: None,
+            });
+            cpass.set_pipeline(&self.pipeline);
+            cpass.set_bind_group(0, Some(&compute_bind_group), &[]);
+            cpass.dispatch_workgroups(self.width / 8, self.height / 8, 1);
+        }
+        encoder.copy_buffer_to_buffer(&raw_buf, 0, &staging_buffer, 0, staging_buffer.size());
+
+        queue.submit(Some(encoder.finish()));
+        let buffer_slice = staging_buffer.slice(..);
+        let (sender, receiver) = flume::bounded(1);
+        buffer_slice.map_async(wgpu::MapMode::Read, move |v| sender.send(v).unwrap());
+
+        device.poll(wgpu::Maintain::wait()).panic_on_timeout();
+
+        receiver.recv().unwrap().unwrap();
+
+        {
+            let view = buffer_slice.get_mapped_range();
+            let result: Vec<Vec4> = bytemuck::cast_slice(&view).to_vec();
 
             drop(view);
             staging_buffer.unmap();
