@@ -1,4 +1,4 @@
-use std::{borrow::Cow, iter, time::Instant};
+use std::{ borrow::Cow, iter, time::Instant};
 
 use bytemuck_derive::{Pod, Zeroable};
 use glam::{Affine3A, Mat4, Quat, Vec3, Vec4};
@@ -143,6 +143,8 @@ async fn main() {
         panic!("Failed to create device");
     };
 
+    let rec = rerun::RecordingStreamBuilder::new("rerun_example_app").spawn().unwrap();
+
     // Lets add a cube as an asset
     let (vert_buf, indices) = create_vertices();
     let cube = AssetMesh {
@@ -192,9 +194,22 @@ async fn main() {
                 Mat4::look_at_rh(Vec3::new(0.0, 0.0, 2.5 + i as f32), Vec3::ZERO, Vec3::Y),
             )
             .await;
-
         println!("Took {:?} to render a depth frame", start_time.elapsed());
-        println!("{:?}", res.iter().fold(0.0, |acc, x| x.max(acc)));
+        use ndarray::ShapeBuilder;
+
+        let mut image = ndarray::Array::<u16, _>::from_elem((256, 256).f(), 65535);
+        for (i, x) in res.iter().enumerate() {
+            let x = (x * 1000.0) as u16;
+            image[(i / 256, i % 256)] = x;
+        }
+        let depth_image = rerun::DepthImage::try_from(image).unwrap()
+            .with_meter(1000.0)
+            .with_colormap(rerun::components::Colormap::Viridis);
+        //println!("{:?}", res.iter().fold(0.0, |acc, x| x.w.max(acc)));
+
+        //let positions: Vec<_> = res.iter().map(|x| rerun::Position3D::new(x.x, x.y, x.z)).collect();
+        rec.log("depth_cloud", &depth_image);
+        //rec.log("depth_cloud", &rerun::Points3D::new(positions));
 
         println!("Rendering lidar beams");
         let start_time = Instant::now();
@@ -234,5 +249,5 @@ async fn main() {
     let res = lidar
             .render_lidar_pointcloud(&scene, &device, &queue, &lidar_pose)
             .await;
-        println!("{:?}", res); //res.iter().fold(0.0, |acc, x| x.max(acc)));
+        //println!("{:?}", res); //res.iter().fold(0.0, |acc, x| x.max(acc)));
 }

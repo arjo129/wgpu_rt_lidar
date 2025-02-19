@@ -20,6 +20,7 @@ struct DepthCameraUniforms {
 /// Representation for a depth camera sensor
 pub struct DepthCamera {
     pipeline: wgpu::ComputePipeline,
+    pointcloud_pipeline: wgpu::ComputePipeline,
     uniforms: DepthCameraUniforms,
     width: u32,
     height: u32,
@@ -51,11 +52,24 @@ impl DepthCamera {
             source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shader.wgsl"))),
         });
 
+        let pointcloud_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("rt_computer"),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shader.pointcloud.wgsl"))),
+        });
+
         Self {
             pipeline: device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
                 label: Some("rt"),
                 layout: None,
                 module: &camera_shader,
+                entry_point: Some("main"),
+                compilation_options: Default::default(),
+                cache: None,
+            }),
+            pointcloud_pipeline: device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("rt"),
+                layout: None,
+                module: &pointcloud_shader,
                 entry_point: Some("main"),
                 compilation_options: Default::default(),
                 cache: None,
@@ -215,7 +229,7 @@ impl DepthCamera {
                 label: None,
                 timestamp_writes: None,
             });
-            cpass.set_pipeline(&self.pipeline);
+            cpass.set_pipeline(&self.pointcloud_pipeline);
             cpass.set_bind_group(0, Some(&compute_bind_group), &[]);
             cpass.dispatch_workgroups(self.width / 8, self.height / 8, 1);
         }

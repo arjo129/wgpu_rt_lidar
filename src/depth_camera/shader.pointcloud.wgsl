@@ -75,6 +75,6 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
     let intersection = rayQueryGetCommittedIntersection(&rq);
     if (intersection.kind != RAY_QUERY_INTERSECTION_NONE) {
-        raw_buf[global_id.x * target_size.y + global_id.y] = intersection.t * direction;
+        raw_buf[global_id.x * target_size.x + global_id.y] = vec4<f32>(direction.x, direction.y, direction.z, 1.0);
     }
 }
