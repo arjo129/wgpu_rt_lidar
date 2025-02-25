@@ -46,9 +46,7 @@ fn to_index(pos: vec3<u32>) -> u32 {
 }
 
 
-
-
-/// Very inefficient way to find the closest point in the grid
+/// Very inefficient way to find approximate closest point in the grid
 fn get_closest_point(pos: vec3<f32>, starting_cell: vec3<u32>) -> SearchResult {
     var step: u32 = 0;
     var found: u32 = 0;
@@ -98,8 +96,8 @@ fn get_closest_point(pos: vec3<f32>, starting_cell: vec3<u32>) -> SearchResult {
             j = start_y;
             while j <= end_y {
                 k = start_z;
-                while k <= end_z: {    
-                    let index = to_index(starting_cell + vec3<u32>(step, 0, 0));
+                while k <= end_z {    
+                    let index = to_index(vec3<u32>(i, j, k));
                     let result = get_closest_point_in_cell(pos, index);
                     if result.found == 1 {
                         return result;
@@ -108,32 +106,50 @@ fn get_closest_point(pos: vec3<f32>, starting_cell: vec3<u32>) -> SearchResult {
                 }
                 j += 1;
             }
-            i += step
+            i += step;
         }
 
         j = start_y;
-        while j <= end_y:
-            i = start_x
-            while i <= end_x:
-                k = start_z 
-                while k <= end_z:     
-                    print(i, j, k)
-                    k += 1
-                i += 1
-            j += 2
+        while j <= end_y {
+            i = start_x;
+            while i <= end_x {
+                k = start_z;
+                while k <= end_z {     
+                    let index = to_index(vec3<u32>(i, j, k));
+                    let result = get_closest_point_in_cell(pos, index);
+                    if result.found == 1 {
+                        return result;
+                    }
+                    k += 1;
+                }
+                i += 1;
+            }
+            j += step;
+        }
 
-
-        k = start_z
-        while k <= end_z:
-            i = start_x
-            while i <= end_x:
-                j = start_y
-                while j <= end_y:     
-                    print(i, j, k)
-                    j += 1
-                i += 1
-            k += 2
+        k = start_z;
+        while k <= end_z {
+            i = start_x;
+            while i <= end_x {
+                j = start_y;
+                while j <= end_y {    
+                    let index = to_index(vec3<u32>(i, j, k));
+                    let result = get_closest_point_in_cell(pos, index);
+                    if result.found == 1 {
+                        return result;
+                    }
+                    j += 1;
+                }
+                i += 1;
+            }
+            k += step;
+        }
+        step = step + 1;
+        if step == uniforms_base.width_steps {
+            return SearchResult(0, 0);
+        }
     }
+    return SearchResult(0, 0);
 }
 /// Check in a cell for the closest point to a given position
 fn get_closest_point_in_cell(pos: vec3<f32>, index: u32) -> SearchResult{

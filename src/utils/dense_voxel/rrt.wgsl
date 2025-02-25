@@ -75,6 +75,115 @@ fn get_closest_point_in_cell(pos: vec3<f32>, index: u32) -> SearchResult{
 }
 
 
+
+/// Very inefficient way to find approximate closest point in the grid.
+/// We should be looking for a KDTree or some other data structure
+/// 
+fn get_closest_point(pos: vec3<f32>, starting_cell: vec3<u32>) -> SearchResult {
+    var step: u32 = 0;
+    var found: u32 = 0;
+    let index = to_index(starting_cell + vec3<u32>(step, 0, 0));
+    let result = get_closest_point_in_cell(pos, index);
+    if result.found == 1 {
+        return result;
+    }
+    step = step + 1;
+    while found == 0 {
+        var start_x: u32 = 0;
+        if starting_cell.x > step {
+            start_x = starting_cell.x - step;
+        }
+
+        var end_x: u32 = uniforms_base.width_steps;
+        if starting_cell.x + step < uniforms_base.width_steps {
+            end_x = starting_cell.x + step;
+        }
+
+        var start_y: u32 = 0;
+        if starting_cell.y > step {
+            start_y = starting_cell.y - step;
+        }
+
+        var end_y: u32 = uniforms_base.width_steps;
+        if starting_cell.y + step < uniforms_base.width_steps {
+            end_y = starting_cell.y + step;
+        }
+
+        var start_z: u32 = 0;
+        if starting_cell.z > step {
+            start_z = starting_cell.z - step;
+        }
+
+        var end_z: u32 = uniforms_base.width_steps;
+        if starting_cell.y + step < uniforms_base.width_steps {
+            end_z = starting_cell.z + step;
+        }
+
+
+
+        var i = start_x;
+        var j = start_y;
+        var k = start_z;
+        while i <= end_x { 
+            j = start_y;
+            while j <= end_y {
+                k = start_z;
+                while k <= end_z {    
+                    let index = to_index(vec3<u32>(i, j, k));
+                    let result = get_closest_point_in_cell(pos, index);
+                    if result.found == 1 {
+                        return result;
+                    }
+                    k += 1;
+                }
+                j += 1;
+            }
+            i += step;
+        }
+
+        j = start_y;
+        while j <= end_y {
+            i = start_x;
+            while i <= end_x {
+                k = start_z;
+                while k <= end_z {     
+                    let index = to_index(vec3<u32>(i, j, k));
+                    let result = get_closest_point_in_cell(pos, index);
+                    if result.found == 1 {
+                        return result;
+                    }
+                    k += 1;
+                }
+                i += 1;
+            }
+            j += step;
+        }
+
+        k = start_z;
+        while k <= end_z {
+            i = start_x;
+            while i <= end_x {
+                j = start_y;
+                while j <= end_y {    
+                    let index = to_index(vec3<u32>(i, j, k));
+                    let result = get_closest_point_in_cell(pos, index);
+                    if result.found == 1 {
+                        return result;
+                    }
+                    j += 1;
+                }
+                i += 1;
+            }
+            k += step;
+        }
+        step = step + 1;
+        if step == uniforms_base.width_steps {
+            return SearchResult(0, 0);
+        }
+    }
+    return SearchResult(0, 0);
+}
+
 @compute
 @workgroup_size(1)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
@@ -86,7 +195,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         if query_point.occupied == 0 {
             return;
         }
-        let result = get_closest_point_in_cell(query_point.position, base_index);
+        let result = get_closest_point(query_point.position, base_index);
         if result.found == 1 {
             var rq: ray_query;
             let size = length(query_point.position - base_grid[result.index].position);

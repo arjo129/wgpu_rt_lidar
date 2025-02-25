@@ -620,6 +620,64 @@ async fn test_voxel_nn() {
 
 #[cfg(test)]
 #[tokio::test]
+async fn test_voxel_nn_far_away() {
+    let mut voxel_grid =
+        DenseVoxel::new(Vec3::new(5.0, 5.0, 5.0), Vec3::new(0.0, 0.0, 0.0), 0.5, 10);
+
+    voxel_grid
+        .add_item(VoxelItem {
+            position: Vec3::new(0.5, 0.5, 0.5),
+            occupied: 0,
+        })
+        .unwrap();
+
+    voxel_grid
+        .add_item(VoxelItem {
+            position: Vec3::new(1.55, 1.55, 1.55),
+            occupied: 0,
+        })
+        .unwrap();
+
+    let target = voxel_grid
+        .add_item(VoxelItem {
+            position: Vec3::new(1.6, 1.6, 1.6),
+            occupied: 0,
+        })
+        .unwrap();
+
+    let items = voxel_grid.get_items_in_cell(1, 1, 1);
+    assert_eq!(items.len(), 1);
+
+    let items = voxel_grid.get_items_in_cell_position(Vec3::new(1.6, 1.6, 1.6));
+    assert_eq!(items.len(), 2);
+
+    for i in 0..5 {
+        for j in 0..5 {
+            for k in 0..5 {
+                let internal_index = voxel_grid.index(i, j, k);
+                let (x, y, z) = voxel_grid.from_index(internal_index);
+                assert_eq!(i, x);
+                assert_eq!(j, y);
+                assert_eq!(k, z);
+            }
+        }
+    }
+
+    let queries = vec![Vec3::new(2.1, 1.6, 1.6)];
+    let times_now = std::time::Instant::now();
+    let result = query_nearest_neighbours(&voxel_grid, queries)
+        .await
+        .unwrap();
+    println!("Time taken: {:?}", times_now.elapsed());
+    let result: Vec<_> = result.iter().filter(|p| **p != 0xFFFFu32).collect();
+    assert_eq!(result.len(), 1);
+    assert_eq!(*result[0], target as u32);
+    //run().await;
+}
+
+
+#[cfg(test)]
+#[tokio::test]
 async fn test_voxel_rrt() {
     use crate::utils::{create_cube, get_raytracing_gpu};
 
