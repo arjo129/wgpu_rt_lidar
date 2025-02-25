@@ -31,6 +31,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
                         lidar_position[2][1], 
                         lidar_position[2][2]);
     let direction = lidar_beam[global_id.x].direction * matrix;
+
     var rq: ray_query;
     rayQueryInitialize(&rq, acc_struct, RayDesc(0x0u, 0xFFu, 0.1, 50.0, m_origin, direction));
     rayQueryProceed(&rq);
@@ -38,6 +39,6 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let intersection = rayQueryGetCommittedIntersection(&rq);
     if (intersection.kind != RAY_QUERY_INTERSECTION_NONE) {
       let beam = lidar_beam[global_id.x].direction * intersection.t;
-      v_indices[global_id.x] = vec4f(beam.x, beam.y, beam.z, intersection.t);
+    
     }
 }

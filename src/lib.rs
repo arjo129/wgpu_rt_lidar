@@ -1,10 +1,12 @@
-use std::iter;
+use std::{collections::HashMap, iter};
 
 use bytemuck_derive::{Pod, Zeroable};
 use glam::Affine3A;
+use rerun::components::RotationAxisAngle;
 use wgpu::util::DeviceExt;
 pub mod depth_camera;
 pub mod lidar;
+pub mod utils;
 
 /// Helper function to convert an affine matrix to a 4x3 row matrix.
 #[inline]
@@ -94,6 +96,8 @@ pub struct RayTraceScene {
     pub(crate) index_buf: wgpu::Buffer,
     pub(crate) blas: Vec<wgpu::Blas>,
     pub(crate) tlas_package: wgpu::TlasPackage,
+    assets: Vec<AssetMesh>,
+    instances: Vec<Instance>,
 }
 
 impl RayTraceScene {
@@ -223,6 +227,8 @@ impl RayTraceScene {
             index_buf,
             blas,
             tlas_package,
+            assets: assets.clone(),
+            instances: instances.clone(),
         }
     }
 
@@ -249,7 +255,54 @@ impl RayTraceScene {
         let mut encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
         encoder.build_acceleration_structures(iter::empty(), iter::once(&self.tlas_package));
+        // Warning: SLOW!
+        self.instances = update_instance.clone();
 
         Ok(())
+    }
+
+    pub fn visualize(&self, rerun: &rerun::RecordingStream) {
+        // TODO
+        for (idx, mesh) in self.assets.iter().enumerate() {
+            let vertex: Vec<_> = mesh
+                .vertex_buf
+                .iter()
+                .map(|a| [a._pos[0], a._pos[1], a._pos[2]])
+                .collect();
+            let indices: Vec<_> = mesh
+                .index_buf
+                .chunks(3)
+                .map(|a| [a[0] as u32, a[1] as u32, a[2] as u32])
+                .collect();
+            rerun.log(
+                format!("mesh_{}", idx),
+                &rerun::Mesh3D::new(vertex).with_triangle_indices(indices),
+            );
+        }
+
+        let mut instance_map = HashMap::new();
+        for (idx, instance) in self.instances.iter().enumerate() {
+            let translations = [
+                instance.transform.translation.x,
+                instance.transform.translation.y,
+                instance.transform.translation.z,
+            ];
+            let rotation = glam::Quat::from_mat3a(&instance.transform.matrix3);
+            let rotation = rerun::Quaternion::from_xyzw([rotation.x, rotation.y, rotation.z, rotation.w]);
+            let Some(mesh_idx) = instance_map.get_mut(&instance.asset_mesh_index) else {
+                instance_map.insert(idx, vec![(translations, rotation)]);
+                continue;
+            };
+            mesh_idx.push((translations, rotation));
+        }
+
+        for (idx, transform) in instance_map.iter() {
+            let translations = transform.iter().map(|f| f.0);
+            let rotations = transform.iter().map(|f| f.1);
+            rerun.log(
+                format!("mesh_{}", idx),
+                &rerun::InstancePoses3D::new().with_translations(translations).with_quaternions(rotations),
+            );
+        }
     }
 }

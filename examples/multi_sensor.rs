@@ -1,4 +1,4 @@
-use std::{ borrow::Cow, iter, time::Instant};
+use std::{borrow::Cow, iter, time::Instant};
 
 use bytemuck_derive::{Pod, Zeroable};
 use glam::{Affine3A, Mat4, Quat, Vec3, Vec4};
@@ -143,7 +143,9 @@ async fn main() {
         panic!("Failed to create device");
     };
 
-    let rec = rerun::RecordingStreamBuilder::new("rerun_example_app").spawn().unwrap();
+    let rec = rerun::RecordingStreamBuilder::new("rerun_example_app")
+        .spawn()
+        .unwrap();
 
     // Lets add a cube as an asset
     let (vert_buf, indices) = create_vertices();
@@ -183,6 +185,8 @@ async fn main() {
         .collect::<Vec<_>>();
     let mut lidar = Lidar::new(&device, lidar_beams).await;
 
+    scene.visualize(&rec);
+
     // Move the camera back, the cubes are at -30
     for i in 0..3 {
         let start_time = Instant::now();
@@ -202,7 +206,8 @@ async fn main() {
             let x = (x * 1000.0) as u16;
             image[(i / 256, i % 256)] = x;
         }
-        let depth_image = rerun::DepthImage::try_from(image).unwrap()
+        let depth_image = rerun::DepthImage::try_from(image)
+            .unwrap()
             .with_meter(1000.0)
             .with_colormap(rerun::components::Colormap::Viridis);
         //println!("{:?}", res.iter().fold(0.0, |acc, x| x.w.max(acc)));
@@ -233,7 +238,10 @@ async fn main() {
         .await
         .unwrap();
 
-    println!("Rendering after moving cubes {:?}", Mat4::look_at_rh(Vec3::new(0.0, 0.0, 4.5), Vec3::ZERO, Vec3::Y));
+    println!(
+        "Rendering after moving cubes {:?}",
+        Mat4::look_at_rh(Vec3::new(0.0, 0.0, 4.5), Vec3::ZERO, Vec3::Y)
+    );
 
     let res = depth_camera
         .render_depth_camera(
@@ -247,7 +255,7 @@ async fn main() {
 
     let lidar_pose = Affine3A::from_translation(Vec3::new(2.0, 0.0, 3.0));
     let res = lidar
-            .render_lidar_pointcloud(&scene, &device, &queue, &lidar_pose)
-            .await;
-        //println!("{:?}", res); //res.iter().fold(0.0, |acc, x| x.max(acc)));
+        .render_lidar_pointcloud(&scene, &device, &queue, &lidar_pose)
+        .await;
+    println!("{:?}", res); //res.iter().fold(0.0, |acc, x| x.max(acc)));
 }
