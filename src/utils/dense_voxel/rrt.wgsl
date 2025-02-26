@@ -195,7 +195,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         if query_point.occupied == 0 {
             return;
         }
-        let result = get_closest_point(query_point.position, base_index);
+        let result = get_closest_point(query_point.position, global_id);
         if result.found == 1 {
             var rq: ray_query;
             let size = length(query_point.position - base_grid[result.index].position);

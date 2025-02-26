@@ -501,7 +501,7 @@ async fn execute_gpu_rrt_one_iter_inner(
             },
         ],
     });
-
+    let time = std::time::Instant::now();
     // A command encoder executes one or many pipelines.
     // It is to WebGPU what a command buffer is to Vulkan.
     let mut encoder =
@@ -520,13 +520,14 @@ async fn execute_gpu_rrt_one_iter_inner(
             voxel.height_steps() as u32,
         ); // Number of cells to run, the (x,y,z) size of item being processed
     }
+    
     // Sets adds copy operation to command encoder.
     // Will copy data from storage buffer on GPU to staging buffer on CPU.
     encoder.copy_buffer_to_buffer(&result_buffer, 0, &staging_buffer, 0, size);
 
     // Submits command encoder for processing
     queue.submit(Some(encoder.finish()));
-
+    
     // Note that we're not calling `.await` here.
     let buffer_slice = staging_buffer.slice(..);
     // Sets the buffer up for mapping, sending over the result of the mapping back to us when it is finished.
@@ -553,6 +554,8 @@ async fn execute_gpu_rrt_one_iter_inner(
                                 //   delete myPointer;
                                 //   myPointer = NULL;
                                 // It effectively frees the memory
+
+        println!("Time taken: {:?}", time.elapsed());
 
         // Returns data from buffer
         Some(result)
@@ -749,7 +752,9 @@ async fn test_voxel_rrt() {
     let one = execute_gpu_rrt_one_iter_inner(&device, &queue, &voxel_grid, &query_points, &scene)
         .await
         .unwrap();
+    println!("{:?}", one.len());
     let result: Vec<_> = one.iter().filter(|p| **p != 0xFFFFu32).collect();
+    println!("{:?}", result);
     assert_eq!(result.len(), 1);
     assert_eq!(*result[0], target as u32);
     //run().await;
