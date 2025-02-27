@@ -1,4 +1,5 @@
 use glam::Vec3;
+use rand::Rng;
 use std::{mem::size_of_val, result, str::FromStr};
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 
@@ -7,8 +8,8 @@ use crate::{vertex, AssetMesh, RayTraceScene, Vertex};
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Debug)]
 pub struct VoxelItem {
-    position: Vec3,
-    occupied: u32,
+    pub position: Vec3,
+    pub occupied: u32,
 }
 
 pub struct DenseVoxel {
@@ -224,6 +225,7 @@ impl DenseVoxelGpuRepresentation {
     }
 }
 
+/// Queries an approximate nearest neighbour for each point in the `points` vector.
 pub async fn query_nearest_neighbours(voxel: &DenseVoxel, points: Vec<Vec3>) -> Option<Vec<u32>> {
     // Instantiates instance of WebGPU
     let instance = wgpu::Instance::default();
@@ -420,23 +422,50 @@ async fn dense_voxel_nearest_neighbor(
     }
 }
 
-async fn execute_gpu_rrt_one_iter_inner(
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Debug)]
+pub struct Tree {
+    /*x: i32, 
+    y: i32,
+    z: i32,*/
+    pub position: Vec3,
+    pub parent: u32,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Debug)]
+struct State {
+    x: u32,
+    y: u32,
+    z: u32,
+    w: u32,
+}
+
+pub async fn execute_experimental_gpu_rrt(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     voxel: &DenseVoxel,
-    query_points: &Vec<Vec3>,
     lidar: &RayTraceScene,
-) -> Option<Vec<u32>> {
+) -> Option<Vec<Tree>> {
     // Loads the shader from WGSL
     let cs_module = device.create_shader_module(wgpu::include_wgsl!("rrt.wgsl"));
 
-    // Gets the size in bytes of the buffer.
-    let size = (voxel.capacity() * 4) as wgpu::BufferAddress;
+    let results = vec![Tree {
+        position: Vec3::new(0.0, 0.0, 0.0),
+        parent: 50000,
+    }; voxel.capacity()];
 
-    let results = vec![0xFFFFu32; voxel.capacity()];
     let result_buffer = device.create_buffer_init(&BufferInitDescriptor {
         label: Some("Result"),
         contents: bytemuck::cast_slice(&results),
+        usage: wgpu::BufferUsages::STORAGE
+            | wgpu::BufferUsages::COPY_DST
+            | wgpu::BufferUsages::COPY_SRC,
+    });
+
+    let found = device.create_buffer_init(&BufferInitDescriptor {
+        label: Some("Result"),
+        contents: bytemuck::cast_slice(&[0u32]),
         usage: wgpu::BufferUsages::STORAGE
             | wgpu::BufferUsages::COPY_DST
             | wgpu::BufferUsages::COPY_SRC,
@@ -448,7 +477,7 @@ async fn execute_gpu_rrt_one_iter_inner(
     //   `BufferUsages::COPY_DST` allows it to be the destination of the copy.
     let staging_buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: None,
-        size,
+        size: result_buffer.size(),
         usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
@@ -457,9 +486,22 @@ async fn execute_gpu_rrt_one_iter_inner(
     // It is to WebGPU what a descriptor set is to Vulkan.
     // `binding` here refers to the `binding` of a buffer in the shader (`layout(set = 0, binding = 0) buffer`).
     let base = voxel.to_gpu_buffers(device);
-    let other = base
-        .prepare_query_points(query_points)
-        .to_gpu_buffers(device);
+    
+    let mut rng = rand::rng();
+    let random_seed: Vec<_> = (0..voxel.capacity()).map(|_| State {
+        x: rng.random(),
+        y: rng.random(),
+        z: rng.random(),
+        w: rng.random(),
+    }).collect(); 
+    
+    let random_seed = device.create_buffer_init(&BufferInitDescriptor {
+        label: Some("Random seed"),
+        contents: bytemuck::cast_slice(&random_seed),
+        usage: wgpu::BufferUsages::STORAGE
+            | wgpu::BufferUsages::COPY_DST
+            | wgpu::BufferUsages::COPY_SRC,
+    });
     // A pipeline specifies the operation of a shader
 
     // Instantiates the pipeline.
@@ -489,7 +531,7 @@ async fn execute_gpu_rrt_one_iter_inner(
             },
             wgpu::BindGroupEntry {
                 binding: 2,
-                resource: other.data_on_gpu.as_entire_binding(),
+                resource: random_seed.as_entire_binding(),
             },
             wgpu::BindGroupEntry {
                 binding: 3,
@@ -499,11 +541,14 @@ async fn execute_gpu_rrt_one_iter_inner(
                 binding: 4,
                 resource: wgpu::BindingResource::AccelerationStructure(&lidar.tlas_package.tlas()),
             },
+            wgpu::BindGroupEntry {
+                binding: 5,
+                resource: found.as_entire_binding(),
+            },
         ],
     });
     let time = std::time::Instant::now();
-    // A command encoder executes one or many pipelines.
-    // It is to WebGPU what a command buffer is to Vulkan.
+
     let mut encoder =
         device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
     {
@@ -515,15 +560,15 @@ async fn execute_gpu_rrt_one_iter_inner(
         cpass.set_bind_group(0, &bind_group, &[]);
         cpass.insert_debug_marker("compute collatz iterations");
         cpass.dispatch_workgroups(
-            voxel.length_steps() as u32,
-            voxel.width_steps() as u32,
-            voxel.height_steps() as u32,
+            2,//voxel.length_steps() as u32,
+            2,//voxel.width_steps() as u32,
+            2//voxel.height_steps() as u32,
         ); // Number of cells to run, the (x,y,z) size of item being processed
     }
     
     // Sets adds copy operation to command encoder.
     // Will copy data from storage buffer on GPU to staging buffer on CPU.
-    encoder.copy_buffer_to_buffer(&result_buffer, 0, &staging_buffer, 0, size);
+    encoder.copy_buffer_to_buffer(&result_buffer, 0, &staging_buffer, 0, result_buffer.size());
 
     // Submits command encoder for processing
     queue.submit(Some(encoder.finish()));
@@ -694,26 +739,6 @@ async fn test_voxel_rrt() {
         })
         .unwrap();
 
-    voxel_grid
-        .add_item(VoxelItem {
-            position: Vec3::new(1.55, 1.55, 1.55),
-            occupied: 0,
-        })
-        .unwrap();
-
-    let target = voxel_grid
-        .add_item(VoxelItem {
-            position: Vec3::new(1.6, 1.6, 1.6),
-            occupied: 0,
-        })
-        .unwrap();
-
-    let items = voxel_grid.get_items_in_cell(1, 1, 1);
-    assert_eq!(items.len(), 1);
-
-    let items = voxel_grid.get_items_in_cell_position(Vec3::new(1.6, 1.6, 1.6));
-    assert_eq!(items.len(), 2);
-
     for i in 0..5 {
         for j in 0..5 {
             for k in 0..5 {
@@ -729,33 +754,38 @@ async fn test_voxel_rrt() {
     let instance = wgpu::Instance::default();
 
     let (_, device, queue) = get_raytracing_gpu(&instance).await;
-    let cube = create_cube(0.1);
-    let instances = vec![crate::Instance {
-        asset_mesh_index: 0,
-        transform: glam::Affine3A::from_rotation_translation(
-            glam::Quat::from_rotation_y(0.0),
-            glam::Vec3 {
-                x: 1.75,
-                y: 1.75,
-                z: 1.75,
-            },
-        ),
-    }];
+    let cube = create_cube(0.2);
+    let instances = (0..4).map(|x| 
+        (0..4).map(move |y|
+            (2..4).map(move |z|
+                crate::Instance {
+                    asset_mesh_index: 0,
+                    transform: glam::Affine3A::from_rotation_translation(
+                        glam::Quat::from_rotation_y(0.0),
+                        glam::Vec3 {
+                            x: x as f32 + 0.5,
+                            y: y as f32 + 0.5,
+                            z: z as f32 + 0.5,
+                        },
+                    ),
+                }
+            )
+        ).flatten()    
+    ).flatten().collect();
 
     let scene = RayTraceScene::new(&device, &queue, &vec![cube], &instances).await;
-
-    let query_points = vec![
-        Vec3::new(1.65, 1.65, 1.65),
-        Vec3::new(1.85, 1.85, 1.85),
-        Vec3::new(1.58, 1.58, 1.58),
-    ];
-    let one = execute_gpu_rrt_one_iter_inner(&device, &queue, &voxel_grid, &query_points, &scene)
+    let one = execute_experimental_gpu_rrt(&device, &queue, &voxel_grid, &scene)
         .await
         .unwrap();
     println!("{:?}", one.len());
-    let result: Vec<_> = one.iter().filter(|p| **p != 0xFFFFu32).collect();
-    println!("{:?}", result);
-    assert_eq!(result.len(), 1);
-    assert_eq!(*result[0], target as u32);
+    let result: Vec<_> = one.iter().filter(|p| p.parent > 50000).collect();
+    println!("Valid end goals: {:?}", result.len());
+
+    let result: Vec<_> = one.iter().filter(|p| p.parent != 50000).collect();
+    println!("States expanded {:?}", result.len());
+    //println!("{:?}", result);
+    //assert_eq!(result.len(), 2);
+
+    //assert_eq!(result[0].parent, target as u32);
     //run().await;
 }

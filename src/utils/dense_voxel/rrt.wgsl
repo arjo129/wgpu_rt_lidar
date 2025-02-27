@@ -25,6 +25,48 @@ struct SearchResult {
     index: u32
 }
 
+struct Tree {
+    position: vec3<f32>,
+    parent: u32,
+}
+
+struct State {
+  x: u32,
+  y: u32,
+  z: u32,
+  w: u32,
+};
+
+struct RandomResult {
+    state: State,
+    value: u32,
+}
+
+fn xorshift(inp: State) -> RandomResult {
+  var state = inp; 
+  var t = state.x ^ (state.x << 11);
+  state.x = state.y;
+  state.y = state.z;
+  state.z = state.w;
+  state.w = (state.w ^ (state.w >> 19)) ^ (t ^ (t >> 8));
+  return RandomResult(state, state.w);
+}
+
+struct RandomPointResult {
+    state: State,
+    point: vec3<f32>,
+}
+
+fn random_point(inp: State) -> RandomPointResult {
+    var state = xorshift(inp);
+    let x = state.value;
+    state = xorshift(state.state);
+    let y = state.value;
+    state = xorshift(state.state);
+    let z = state.value;
+    RandomPointResult(state.state, vec3<f32>(f32(x) , f32(y) , f32(z)));
+}
+
 @group(0)
 @binding(0)
 var<storage, read_write> base_grid: array<VoxelNode>;
@@ -35,15 +77,19 @@ var<uniform> uniforms_base: DenseVoxelGpuParams;
 
 @group(0)
 @binding(2)
-var<storage, read_write> query_grid: array<VoxelNode>; 
+var<storage, read_write> query_grid: array<State>; 
 
 @group(0)
 @binding(3)
-var<storage, read_write> query_matches: array<u32>; 
+var<storage, read_write> query_matches: array<Tree>; 
 
 @group(0)
 @binding(4)
 var acc_struct: acceleration_structure;
+
+@group(0)
+@binding(5)
+var<storage, read_write> found: atomic<u32>;
 
 fn to_index(pos: vec3<u32>) -> u32 {
     return (pos.x + pos.y * uniforms_base.width_steps + pos.z * uniforms_base.width_steps * uniforms_base.height_steps) * uniforms_base.max_density;
@@ -184,36 +230,69 @@ fn get_closest_point(pos: vec3<f32>, starting_cell: vec3<u32>) -> SearchResult {
     return SearchResult(0, 0);
 }
 
+fn to_f(inp: u32) -> f32 {
+    return f32(inp) / 4294967296.0;
+}
+
 @compute
-@workgroup_size(1)
+@workgroup_size(5,5,5)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+    let goal = vec3<f32>(0.0, 4.0, 3.0);
+  
     var i: u32 = 0;
     let base_index = to_index(global_id);
     let query_index = to_index(global_id);
+    var insert_at: u32 = 0;
     while i < uniforms_base.max_density {
-        let query_point = query_grid[query_index + i];
-        if query_point.occupied == 0 {
-            return;
+        if base_grid[base_index + i].occupied == 0 {
+            insert_at = i;
         }
-        let result = get_closest_point(query_point.position, global_id);
+        i+=1;
+    }
+    
+    i = 0;
+    while i < uniforms_base.max_density {
+        let random = query_grid[base_index + i];
+        let scale =  (uniforms_base.top_right - uniforms_base.bottom_left);
+        let query_point =  vec3<f32>(to_f(random.x) * scale.x, to_f(random.y) * scale.y, to_f(random.z) * scale.z)  + uniforms_base.bottom_left;
+        //query_grid[query_index + i] = random.state;
+        let result = get_closest_point(query_point, global_id);
         if result.found == 1 {
             var rq: ray_query;
-            let size = length(query_point.position - base_grid[result.index].position);
-            let direction =  (query_point.position - base_grid[result.index].position) / size;
-            rayQueryInitialize(&rq, acc_struct, RayDesc(0x0u, 0xFFu, 0.1, 50.0, query_point.position, direction));
+            let size = length(query_point - base_grid[result.index].position);
+            let direction =  (query_point - base_grid[result.index].position) / size;
+            rayQueryInitialize(&rq, acc_struct, RayDesc(0x0u, 0xFFu, 0.0, size, query_point, direction));
             rayQueryProceed(&rq);
             ///query_matches[query_index + i] = result.index;
             let intersection = rayQueryGetCommittedIntersection(&rq);
-           
-            if (intersection.kind != RAY_QUERY_INTERSECTION_NONE) {
-              
-              if (intersection.t < size) {
-                query_matches[query_index + i] = result.index;
-              }
+            if (intersection.kind == RAY_QUERY_INTERSECTION_NONE) 
+            {
+                //Check goal
+              var rq2: ray_query;
+                let size = length(query_point - goal);
+                let direction =  (query_point - goal) / size;
+                rayQueryInitialize(&rq2, acc_struct, RayDesc(0x0u, 0xFFu, 0.0, size, query_point, direction));
+                rayQueryProceed(&rq2);
+                let intersection2 = rayQueryGetCommittedIntersection(&rq2);
+                if (intersection2.kind == RAY_QUERY_INTERSECTION_NONE) {
+                    query_matches[base_index + insert_at] = Tree(query_point, result.index | 0XF0000000);
+                    base_grid[base_index + insert_at] = VoxelNode(query_point, 1);
+                    insert_at += 1;
+                    atomicStore(&found, u32(1));
+                    storageBarrier();
+                    return;
+                }
+              query_matches[base_index + insert_at] = Tree(query_point, result.index);
+              base_grid[base_index + insert_at] = VoxelNode(query_point, 1);
+              insert_at += 1;
+              storageBarrier();
+              //return;
             }
-            else {
-              query_matches[query_index + i] = result.index;
-            }
+        }
+
+        let p = atomicLoad(&found);
+        if p == 1 {
+            return;
         }
         i = i + 1;
     }

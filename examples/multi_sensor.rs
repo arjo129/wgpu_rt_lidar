@@ -14,7 +14,7 @@ async fn main() {
     let instance = wgpu::Instance::default();
     let (adapter, device, queue)= get_raytracing_gpu(&instance).await;
 
-    let rec = rerun::RecordingStreamBuilder::new("rerun_example_app")
+    let rec = rerun::RecordingStreamBuilder::new("depth_camera_vis")
         .spawn()
         .unwrap();
 

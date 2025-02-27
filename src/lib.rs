@@ -232,6 +232,7 @@ impl RayTraceScene {
         }
     }
 
+    /// Set the transform of instances within a scene.
     pub async fn set_transform(
         &mut self,
         device: &wgpu::Device,
@@ -261,6 +262,7 @@ impl RayTraceScene {
         Ok(())
     }
 
+    /// Visualize the scene in rerun.
     pub fn visualize(&self, rerun: &rerun::RecordingStream) {
         // TODO
         for (idx, mesh) in self.assets.iter().enumerate() {
