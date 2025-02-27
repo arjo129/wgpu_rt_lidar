@@ -425,7 +425,7 @@ async fn dense_voxel_nearest_neighbor(
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Debug)]
 pub struct Tree {
-    /*x: i32, 
+    /*x: i32,
     y: i32,
     z: i32,*/
     pub position: Vec3,
@@ -450,10 +450,13 @@ pub async fn execute_experimental_gpu_rrt(
     // Loads the shader from WGSL
     let cs_module = device.create_shader_module(wgpu::include_wgsl!("rrt.wgsl"));
 
-    let results = vec![Tree {
-        position: Vec3::new(0.0, 0.0, 0.0),
-        parent: 50000,
-    }; voxel.capacity()];
+    let results = vec![
+        Tree {
+            position: Vec3::new(0.0, 0.0, 0.0),
+            parent: 50000,
+        };
+        voxel.capacity()
+    ];
 
     let result_buffer = device.create_buffer_init(&BufferInitDescriptor {
         label: Some("Result"),
@@ -486,15 +489,17 @@ pub async fn execute_experimental_gpu_rrt(
     // It is to WebGPU what a descriptor set is to Vulkan.
     // `binding` here refers to the `binding` of a buffer in the shader (`layout(set = 0, binding = 0) buffer`).
     let base = voxel.to_gpu_buffers(device);
-    
+
     let mut rng = rand::rng();
-    let random_seed: Vec<_> = (0..voxel.capacity()).map(|_| State {
-        x: rng.random(),
-        y: rng.random(),
-        z: rng.random(),
-        w: rng.random(),
-    }).collect(); 
-    
+    let random_seed: Vec<_> = (0..voxel.capacity())
+        .map(|_| State {
+            x: rng.random(),
+            y: rng.random(),
+            z: rng.random(),
+            w: rng.random(),
+        })
+        .collect();
+
     let random_seed = device.create_buffer_init(&BufferInitDescriptor {
         label: Some("Random seed"),
         contents: bytemuck::cast_slice(&random_seed),
@@ -560,19 +565,19 @@ pub async fn execute_experimental_gpu_rrt(
         cpass.set_bind_group(0, &bind_group, &[]);
         cpass.insert_debug_marker("compute collatz iterations");
         cpass.dispatch_workgroups(
-            2,//voxel.length_steps() as u32,
-            2,//voxel.width_steps() as u32,
-            2//voxel.height_steps() as u32,
+            2, //voxel.length_steps() as u32,
+            2, //voxel.width_steps() as u32,
+            2, //voxel.height_steps() as u32,
         ); // Number of cells to run, the (x,y,z) size of item being processed
     }
-    
+
     // Sets adds copy operation to command encoder.
     // Will copy data from storage buffer on GPU to staging buffer on CPU.
     encoder.copy_buffer_to_buffer(&result_buffer, 0, &staging_buffer, 0, result_buffer.size());
 
     // Submits command encoder for processing
     queue.submit(Some(encoder.finish()));
-    
+
     // Note that we're not calling `.await` here.
     let buffer_slice = staging_buffer.slice(..);
     // Sets the buffer up for mapping, sending over the result of the mapping back to us when it is finished.
@@ -723,7 +728,6 @@ async fn test_voxel_nn_far_away() {
     //run().await;
 }
 
-
 #[cfg(test)]
 #[tokio::test]
 async fn test_voxel_rrt() {
@@ -755,23 +759,26 @@ async fn test_voxel_rrt() {
 
     let (_, device, queue) = get_raytracing_gpu(&instance).await;
     let cube = create_cube(0.2);
-    let instances = (0..4).map(|x| 
-        (0..4).map(move |y|
-            (2..4).map(move |z|
-                crate::Instance {
-                    asset_mesh_index: 0,
-                    transform: glam::Affine3A::from_rotation_translation(
-                        glam::Quat::from_rotation_y(0.0),
-                        glam::Vec3 {
-                            x: x as f32 + 0.5,
-                            y: y as f32 + 0.5,
-                            z: z as f32 + 0.5,
-                        },
-                    ),
-                }
-            )
-        ).flatten()    
-    ).flatten().collect();
+    let instances = (0..4)
+        .map(|x| {
+            (0..4)
+                .map(move |y| {
+                    (2..4).map(move |z| crate::Instance {
+                        asset_mesh_index: 0,
+                        transform: glam::Affine3A::from_rotation_translation(
+                            glam::Quat::from_rotation_y(0.0),
+                            glam::Vec3 {
+                                x: x as f32 + 0.5,
+                                y: y as f32 + 0.5,
+                                z: z as f32 + 0.5,
+                            },
+                        ),
+                    })
+                })
+                .flatten()
+        })
+        .flatten()
+        .collect();
 
     let scene = RayTraceScene::new(&device, &queue, &vec![cube], &instances).await;
     let one = execute_experimental_gpu_rrt(&device, &queue, &voxel_grid, &scene)

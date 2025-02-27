@@ -290,7 +290,8 @@ impl RayTraceScene {
                 instance.transform.translation.z,
             ];
             let rotation = glam::Quat::from_mat3a(&instance.transform.matrix3);
-            let rotation = rerun::Quaternion::from_xyzw([rotation.x, rotation.y, rotation.z, rotation.w]);
+            let rotation =
+                rerun::Quaternion::from_xyzw([rotation.x, rotation.y, rotation.z, rotation.w]);
             let Some(mesh_idx) = instance_map.get_mut(&instance.asset_mesh_index) else {
                 instance_map.insert(idx, vec![(translations, rotation)]);
                 continue;
@@ -303,7 +304,9 @@ impl RayTraceScene {
             let rotations = transform.iter().map(|f| f.1);
             rerun.log(
                 format!("mesh_{}", idx),
-                &rerun::InstancePoses3D::new().with_translations(translations).with_quaternions(rotations),
+                &rerun::InstancePoses3D::new()
+                    .with_translations(translations)
+                    .with_quaternions(rotations),
             );
         }
     }

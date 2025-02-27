@@ -237,7 +237,7 @@ fn to_f(inp: u32) -> f32 {
 @compute
 @workgroup_size(5,5,5)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-    let goal = vec3<f32>(0.0, 4.0, 3.0);
+    let goal = vec3<f32>(4.0, 4.0, 3.0);
   
     var i: u32 = 0;
     let base_index = to_index(global_id);
@@ -269,8 +269,8 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
             {
                 //Check goal
               var rq2: ray_query;
-                let size = length(query_point - goal);
-                let direction =  (query_point - goal) / size;
+                let size = length(goal - query_point);
+                let direction =  (goal - query_point) / size;
                 rayQueryInitialize(&rq2, acc_struct, RayDesc(0x0u, 0xFFu, 0.0, size, query_point, direction));
                 rayQueryProceed(&rq2);
                 let intersection2 = rayQueryGetCommittedIntersection(&rq2);

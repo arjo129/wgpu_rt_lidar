@@ -4,21 +4,23 @@ use bytemuck_derive::{Pod, Zeroable};
 use glam::{Affine3A, Mat4, Quat, Vec3, Vec4};
 use wgpu::util::DeviceExt;
 use wgpu_rt_lidar::{
-    depth_camera::DepthCamera, lidar::Lidar, utils::{create_cube, get_raytracing_gpu}, vertex, AssetMesh, Instance, RayTraceScene, Vertex
+    depth_camera::DepthCamera,
+    lidar::Lidar,
+    utils::{create_cube, get_raytracing_gpu},
+    vertex, AssetMesh, Instance, RayTraceScene, Vertex,
 };
-
 
 #[tokio::main]
 async fn main() {
     // Set up a wgpu instance and device
     let instance = wgpu::Instance::default();
-    let (adapter, device, queue)= get_raytracing_gpu(&instance).await;
+    let (adapter, device, queue) = get_raytracing_gpu(&instance).await;
 
     let rec = rerun::RecordingStreamBuilder::new("depth_camera_vis")
         .spawn()
         .unwrap();
 
-    // Lets add a cube as an asset   
+    // Lets add a cube as an asset
     let cube = create_cube(1.0);
 
     // Build Scene. Spawn 16 cubes.
@@ -68,10 +70,20 @@ async fn main() {
         println!("Took {:?} to render a depth frame", start_time.elapsed());
         use ndarray::ShapeBuilder;
 
-        let mut image = ndarray::Array::<u16, _>::from_elem((depth_camera.width() as usize, depth_camera.height() as usize).f(), 65535);
+        let mut image = ndarray::Array::<u16, _>::from_elem(
+            (
+                depth_camera.width() as usize,
+                depth_camera.height() as usize,
+            )
+                .f(),
+            65535,
+        );
         for (i, x) in res.iter().enumerate() {
             let x = (x * 1000.0) as u16;
-            image[(i / depth_camera.width() as usize, i % depth_camera.width() as usize)] = x;
+            image[(
+                i / depth_camera.width() as usize,
+                i % depth_camera.width() as usize,
+            )] = x;
         }
         let depth_image = rerun::DepthImage::try_from(image)
             .unwrap()
