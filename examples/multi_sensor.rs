@@ -24,7 +24,7 @@ async fn main() {
     let cube = create_cube(1.0);
 
     // Build Scene. Spawn 16 cubes.
-    let side_count = 8;
+    let side_count = 1;
     let mut instances = vec![];
     for x in 0..side_count {
         for y in 0..side_count {
@@ -35,16 +35,17 @@ async fn main() {
                     Vec3 {
                         x: x as f32 * 3.0,
                         y: y as f32 * 3.0,
-                        z: -30.0,
+                        z: -10.0,
                     },
                 ),
             });
         }
     }
+    println!("Instances: {:?}", instances.iter().map(|m| m.transform.translation).collect::<Vec<glam::Vec3A>>());
 
     let mut scene = RayTraceScene::new(&device, &queue, &vec![cube], &instances).await;
 
-    let mut depth_camera = DepthCamera::new(&device, 1024, 1024, 59.0).await;
+    let mut depth_camera = DepthCamera::new(&device, 256, 256, 59.0, 50.0).await;
 
     let lidar_beams = (0..256)
         .map(|f| {
@@ -59,6 +60,7 @@ async fn main() {
     // Move the camera back, the cubes are at -30
     for i in 0..3 {
         let start_time = Instant::now();
+        println!("Rendering depth camera {:?}", Mat4::look_at_rh(Vec3::new(0.0, 0.0, 2.5 + i as f32), Vec3::ZERO, Vec3::Y),);
         let res = depth_camera
             .render_depth_camera(
                 &scene,

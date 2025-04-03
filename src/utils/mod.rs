@@ -3,6 +3,7 @@ use wgpu::{Adapter, Device, Queue};
 use crate::{vertex, AssetMesh};
 
 pub mod dense_voxel;
+pub mod diff_render;
 
 /// Lets create a cube with 6 faces
 pub fn create_cube(size: f32) -> AssetMesh {

@@ -17,6 +17,46 @@ struct DepthCameraUniforms {
     padding: [f32; 2],
 }
 
+pub struct GPUDepthImage {
+    gpu_buffer: wgpu::Buffer,
+    width: u32,
+    height: u32
+}
+
+impl GPUDepthImage {
+    pub async fn to_vecf32(&mut self, device: &wgpu::Device,
+        queue: &wgpu::Queue) -> Vec<f32> {
+        let staging_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: self.gpu_buffer.size(),
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let mut encoder =
+        device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        encoder.copy_buffer_to_buffer(&self.gpu_buffer, 0, &staging_buffer, 0, staging_buffer.size());
+
+        queue.submit(Some(encoder.finish()));
+        let buffer_slice = staging_buffer.slice(..);
+        let (sender, receiver) = flume::bounded(1);
+        buffer_slice.map_async(wgpu::MapMode::Read, move |v| sender.send(v).unwrap());
+
+        device.poll(wgpu::Maintain::wait()).panic_on_timeout();
+
+        receiver.recv().unwrap().unwrap();
+
+        {
+            let view = buffer_slice.get_mapped_range();
+            let result: Vec<f32> = bytemuck::cast_slice(&view).to_vec();
+
+            drop(view);
+            staging_buffer.unmap();
+            return result;
+        }
+    }
+}
+
 /// Representation for a depth camera sensor
 pub struct DepthCamera {
     pipeline: wgpu::ComputePipeline,
@@ -24,11 +64,12 @@ pub struct DepthCamera {
     uniforms: DepthCameraUniforms,
     width: u32,
     height: u32,
+    distance: f32
 }
 
 impl DepthCamera {
     /// Create a new depth camera sensor
-    pub async fn new(device: &wgpu::Device, width: u32, height: u32, fov_y: f32) -> Self {
+    pub async fn new(device: &wgpu::Device, width: u32, height: u32, fov_y: f32, distance: f32) -> Self {
         let uniforms = {
             let view = Mat4::look_at_rh(Vec3::new(0.0, 0.0, 2.5), Vec3::ZERO, Vec3::Y);
             let proj = Mat4::perspective_rh(
@@ -77,6 +118,76 @@ impl DepthCamera {
             uniforms,
             width,
             height,
+            distance
+        }
+    }
+
+    /// Render the depth camera sensor. Returns the depth image as a vector of f32.
+    pub async fn render_depth_camera_in_gpu(
+        &mut self,
+        scene: &RayTraceScene,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        view_matrix: Mat4,
+    ) -> GPUDepthImage {
+        self.uniforms.view_inverse = view_matrix.inverse();
+
+        let compute_bind_group_layout = self.pipeline.get_bind_group_layout(0);
+
+        let uniform_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Uniform Buffer"),
+            contents: bytemuck::cast_slice(&[self.uniforms]),
+            usage: wgpu::BufferUsages::UNIFORM,
+        });
+
+        // Temporary load values from here to debug. Is slow.
+        let raw_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: None,
+            contents: bytemuck::cast_slice(&vec![self.distance; (self.width * self.height) as usize]),
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            //mapped_at_creation: false,
+        });
+
+        let compute_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: None,
+            layout: &compute_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: uniform_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::AccelerationStructure(
+                        &scene.tlas_package.tlas(),
+                    ),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: raw_buf.as_entire_binding(),
+                },
+            ],
+        });
+
+        let mut encoder =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+
+        encoder.build_acceleration_structures(iter::empty(), iter::once(&scene.tlas_package));
+
+        {
+            let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: None,
+                timestamp_writes: None,
+            });
+            cpass.set_pipeline(&self.pipeline);
+            cpass.set_bind_group(0, Some(&compute_bind_group), &[]);
+            cpass.dispatch_workgroups(self.width / 8, self.height / 8, 1);
+        }
+
+        GPUDepthImage {
+            gpu_buffer: raw_buf,
+            width: self.width,
+            height: self.height
         }
     }
 
@@ -97,11 +208,13 @@ impl DepthCamera {
             contents: bytemuck::cast_slice(&[self.uniforms]),
             usage: wgpu::BufferUsages::UNIFORM,
         });
-        let raw_buf = device.create_buffer(&wgpu::BufferDescriptor {
+
+        // Temporary load values from here to debug. Is slow.
+        let raw_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: None,
-            size: (self.width * self.height * 4) as u64,
+            contents: bytemuck::cast_slice(&vec![self.distance; (self.width * self.height) as usize]),
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-            mapped_at_creation: false,
+            //mapped_at_creation: false,
         });
 
         let compute_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {

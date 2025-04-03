@@ -1,3 +1,5 @@
+use core::f32;
+
 use glam::Vec3;
 use wgpu_rt_lidar::Instance;
 use wgpu_rt_lidar::{
@@ -9,6 +11,9 @@ use wgpu_rt_lidar::{
     RayTraceScene,
 };
 
+fn to_tuple(val: glam::Vec3) -> [f32;3] {
+    [val.x, val.y, val.z]
+}
 /// Super Super experimental RRT implementation
 /// No idea if its correct.
 #[tokio::main]
@@ -53,6 +58,50 @@ pub async fn main() {
     let one = execute_experimental_gpu_rrt(&device, &queue, &voxel_grid, &scene)
         .await
         .unwrap();
+    let mut points = vec![];
+    let mut leaves = vec![];
+    let goal = Vec3::new(4.0, 4.0, 3.0);
+    let start = Vec3::new(0.5, 0.5, 0.5);
+    let mut lowest_cost = f32::INFINITY;
+    let mut pt = Vec3::new(0.0,0.0,0.0);
+    for i in &one {
+        if i.parent == 50000  {
+            continue;
+        }
+        
+        if (i.parent as usize) < one.len() {
+            println!("{:?}", i.parent);
+            println!("{:?}", one[i.parent as usize]);
+            leaves.push((i.position.x, i.position.y, i.position.z));
+        }
+        else {
+            println!("{:?}", i.parent & !0xf0000000);
+            let cost = (i.position - goal).length() + (i.position-start).length();
+            if cost < lowest_cost {
+                lowest_cost = cost;
+                pt = i.position;
+            }
+            points.push((i.position.x, i.position.y, i.position.z));
+            //println!("{:?}", one[(i.parent & ~0XF0000000) as usize]);
+            
+        }
+    }
+    rec.log("path", &rerun::LineStrips3D::new([[
+        to_tuple(start), to_tuple(pt), to_tuple(goal)]]));
+    rec.log(
+        "points",
+        &rerun::Points3D::new(points.iter()).with_colors([rerun::Color::from_rgb(0, 255, 0)]),
+    );
+
+    rec.log(
+        "shadow_points",
+        &rerun::Points3D::new(leaves.iter()).with_colors([rerun::Color::from_rgb(255, 0, 0)]),
+    );
+
+    rec.log(
+        "goal",
+        &rerun::Points3D::new([(4.0, 4.0, 3.0)]).with_colors([rerun::Color::from_rgb(0, 255, 0)]).with_radii([0.2]),
+    );
     println!("{:?}", one.len());
     let result: Vec<_> = one.iter().filter(|p| p.parent > 50000).collect();
     println!("Valid end states: {:?}", result.len());
