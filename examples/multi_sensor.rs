@@ -44,7 +44,7 @@ async fn main() {
 
     let mut scene = RayTraceScene::new(&device, &queue, &vec![cube], &instances).await;
 
-    let mut depth_camera = DepthCamera::new(&device, 1024, 1024, 59.0).await;
+    let mut depth_camera = DepthCamera::new(&device, 1024, 1024, 59.0, 50.0).await;
 
     let lidar_beams = (0..256)
         .map(|f| {
