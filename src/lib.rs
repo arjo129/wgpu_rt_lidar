@@ -142,7 +142,7 @@ impl RayTraceScene {
                     start_indices_buf,
                 )
             },
-        ); //create_vertices();
+        );
 
         let vertex_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex Buffer"),
