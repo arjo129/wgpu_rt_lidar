@@ -156,27 +156,28 @@ impl RayTraceScene {
             usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::BLAS_INPUT,
         });
 
-        let geometry_desc_sizes = assets
-            .iter()
-            .map(|asset| wgpu::BlasTriangleGeometrySizeDescriptor {
+        let mut geometry_desc_sizes = vec![];
+        let mut blas = vec![];
+        for asset in assets {
+            geometry_desc_sizes.push(wgpu::BlasTriangleGeometrySizeDescriptor {
                 vertex_count: asset.vertex_buf.len() as u32,
                 vertex_format: wgpu::VertexFormat::Float32x3,
                 index_count: Some(asset.index_buf.len() as u32),
                 index_format: Some(wgpu::IndexFormat::Uint16),
                 flags: wgpu::AccelerationStructureGeometryFlags::OPAQUE,
-            })
-            .collect::<Vec<_>>();
+            });
 
-        let blas = vec![device.create_blas(
-            &wgpu::CreateBlasDescriptor {
-                label: None,
-                flags: wgpu::AccelerationStructureFlags::PREFER_FAST_TRACE,
-                update_mode: wgpu::AccelerationStructureUpdateMode::Build,
-            },
-            wgpu::BlasGeometrySizeDescriptors::Triangles {
-                descriptors: geometry_desc_sizes.clone(),
-            },
-        )];
+            blas.push(device.create_blas(
+                &wgpu::CreateBlasDescriptor {
+                    label: None,
+                    flags: wgpu::AccelerationStructureFlags::PREFER_FAST_TRACE,
+                    update_mode: wgpu::AccelerationStructureUpdateMode::Build,
+                },
+                wgpu::BlasGeometrySizeDescriptors::Triangles {
+                    descriptors: geometry_desc_sizes.clone(),
+                },
+            ));
+        }
 
         let tlas = device.create_tlas(&wgpu::CreateTlasDescriptor {
             label: None,
