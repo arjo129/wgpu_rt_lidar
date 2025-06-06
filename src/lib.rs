@@ -108,41 +108,21 @@ impl RayTraceScene {
         assets: &Vec<AssetMesh>,
         instances: &Vec<Instance>,
     ) -> Self {
-        let (vertex_data, index_data, start_vertex_address, start_indices_address): (
-            Vec<_>,
-            Vec<u16>,
-            Vec<usize>,
-            Vec<usize>,
-        ) = assets.iter().fold(
-            (vec![], vec![], vec![0], vec![0]),
-            |(vertex_buf, index_buf, start_buf, indices_buf), asset| {
-                // TODO
-                let mut start_vertex_buf = start_buf.clone();
-                if let Some(last) = start_vertex_buf.last() {
-                    start_vertex_buf.push(*last + vertex_buf.len());
-                }
 
-                let mut start_indices_buf = indices_buf.clone();
-                if let Some(last) = start_indices_buf.last() {
-                    start_indices_buf.push(*last + indices_buf.len());
-                }
-
-                (
-                    vertex_buf
-                        .iter()
-                        .chain(asset.vertex_buf.iter())
-                        .cloned()
-                        .collect::<Vec<Vertex>>(),
-                    index_buf
-                        .iter()
-                        .chain(asset.index_buf.iter())
-                        .cloned()
-                        .collect::<Vec<u16>>(),
-                    start_vertex_buf,
-                    start_indices_buf,
-                )
-            },
-        ); //create_vertices();
+        let mut vertex_data = vec![];
+        let mut index_data = vec![];
+        let mut start_vertex_address = vec![];
+        let mut start_indices_address = vec![];
+        let mut geometries = vec![];
+        for asset in assets {
+            start_vertex_address.push(vertex_data.len());
+            vertex_data.extend(asset.vertex_buf.iter().cloned());
+            let start_indices = index_data.len();
+            start_indices_address.push(index_data.len());
+            index_data.extend(asset.index_buf.iter().cloned());
+            let end_indices = index_data.len();
+            geometries.push(start_indices..end_indices);
+        }
 
         let vertex_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex Buffer"),
@@ -156,27 +136,36 @@ impl RayTraceScene {
             usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::BLAS_INPUT,
         });
 
-        let geometry_desc_sizes = assets
-            .iter()
-            .map(|asset| wgpu::BlasTriangleGeometrySizeDescriptor {
+        let mut geometry_desc_sizes = vec![];
+        let mut blas = vec![];
+        println!("Creating BLAS for {} assets", assets.len());
+        for asset in assets {
+            println!(
+                "Creating BLAS for asset with {} vertices and {} indices",
+                asset.vertex_buf.len(),
+                asset.index_buf.len()
+            );
+            let geom_list = vec!
+            [wgpu::BlasTriangleGeometrySizeDescriptor {
                 vertex_count: asset.vertex_buf.len() as u32,
                 vertex_format: wgpu::VertexFormat::Float32x3,
                 index_count: Some(asset.index_buf.len() as u32),
                 index_format: Some(wgpu::IndexFormat::Uint16),
                 flags: wgpu::AccelerationStructureGeometryFlags::OPAQUE,
-            })
-            .collect::<Vec<_>>();
+            }];
+            geometry_desc_sizes.push(geom_list.clone());
 
-        let blas = vec![device.create_blas(
-            &wgpu::CreateBlasDescriptor {
-                label: None,
-                flags: wgpu::AccelerationStructureFlags::PREFER_FAST_TRACE,
-                update_mode: wgpu::AccelerationStructureUpdateMode::Build,
-            },
-            wgpu::BlasGeometrySizeDescriptors::Triangles {
-                descriptors: geometry_desc_sizes.clone(),
-            },
-        )];
+            blas.push(device.create_blas(
+                &wgpu::CreateBlasDescriptor {
+                    label: Some(&format!("BLAS {}", blas.len())),
+                    flags: wgpu::AccelerationStructureFlags::PREFER_FAST_TRACE,
+                    update_mode: wgpu::AccelerationStructureUpdateMode::Build,
+                },
+                wgpu::BlasGeometrySizeDescriptors::Triangles {
+                    descriptors: geom_list.clone(),
+                },
+            ));
+        }
 
         let tlas = device.create_tlas(&wgpu::CreateTlasDescriptor {
             label: None,
@@ -201,11 +190,12 @@ impl RayTraceScene {
         let blas_iter: Vec<_> = blas
             .iter()
             .enumerate()
-            .map(|(index, blas)| wgpu::BlasBuildEntry {
+            .map(|(index, blas)| 
+            wgpu::BlasBuildEntry {
                 blas,
                 geometry: wgpu::BlasGeometries::TriangleGeometries(vec![
                     wgpu::BlasTriangleGeometry {
-                        size: &geometry_desc_sizes[index],
+                        size: &geometry_desc_sizes[index][0],
                         vertex_buffer: &vertex_buf,
                         first_vertex: start_vertex_address[index] as u32,
                         vertex_stride: std::mem::size_of::<Vertex>() as u64,
