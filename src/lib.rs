@@ -108,42 +108,21 @@ impl RayTraceScene {
         assets: &Vec<AssetMesh>,
         instances: &Vec<Instance>,
     ) -> Self {
-        let (vertex_data, index_data, start_vertex_address, start_indices_address): (
-            Vec<_>,
-            Vec<u16>,
-            Vec<usize>,
-            Vec<usize>,
-        ) = assets.iter().fold(
-            (vec![], vec![], vec![0], vec![0]),
-            |(vertex_buf, index_buf, start_buf, indices_buf), asset| {
-                // TODO
-                println!("Processing asset with {:?} vertices and {:?} indices", asset.vertex_buf, asset.index_buf);
-                let mut start_vertex_buf = start_buf.clone();
-                if let Some(last) = start_vertex_buf.last() {
-                    start_vertex_buf.push(*last + vertex_buf.len());
-                }
 
-                let mut start_indices_buf = indices_buf.clone();
-                if let Some(last) = start_indices_buf.last() {
-                    start_indices_buf.push(*last + indices_buf.len());
-                }
-
-                (
-                    vertex_buf
-                        .iter()
-                        .chain(asset.vertex_buf.iter())
-                        .cloned()
-                        .collect::<Vec<Vertex>>(),
-                    index_buf
-                        .iter()
-                        .chain(asset.index_buf.iter())
-                        .cloned()
-                        .collect::<Vec<u16>>(),
-                    start_vertex_buf,
-                    start_indices_buf,
-                )
-            },
-        );
+        let mut vertex_data = vec![];
+        let mut index_data = vec![];
+        let mut start_vertex_address = vec![];
+        let mut start_indices_address = vec![];
+        let mut geometries = vec![];
+        for asset in assets {
+            start_vertex_address.push(vertex_data.len());
+            vertex_data.extend(asset.vertex_buf.iter().cloned());
+            let start_indices = index_data.len();
+            start_indices_address.push(index_data.len());
+            index_data.extend(asset.index_buf.iter().cloned());
+            let end_indices = index_data.len();
+            geometries.push(start_indices..end_indices);
+        }
 
         let vertex_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex Buffer"),
