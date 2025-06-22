@@ -149,7 +149,7 @@ impl Lidar {
         }
     }
 
-     pub async fn render_lidar_beams(
+    pub async fn render_lidar_beams(
         &mut self,
         scene: &RayTraceScene,
         device: &wgpu::Device,

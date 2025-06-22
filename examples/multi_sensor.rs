@@ -14,11 +14,11 @@ use wgpu_rt_lidar::{
 async fn main() {
     // Set up a wgpu instance and device
     let instance = wgpu::Instance::default();
-    let (adapter, device, queue) = get_raytracing_gpu(&instance).await;
+    let (_, device, queue) = get_raytracing_gpu(&instance).await;
 
-    let rec = rerun::RecordingStreamBuilder::new("depth_camera_vis")
-        .spawn()
-        .unwrap();
+    //let rec = rerun::RecordingStreamBuilder::new("depth_camera_vis")
+    //    .spawn()
+    //    .unwrap();
 
     // Lets add a cube as an asset
     let cube = create_cube(1.0);
@@ -54,7 +54,7 @@ async fn main() {
         .collect::<Vec<_>>();
     let mut lidar = Lidar::new(&device, lidar_beams).await;
 
-    scene.visualize(&rec);
+    //scene.visualize(&rec);
 
     // Move the camera back, the cubes are at -30
     for i in 0..3 {
@@ -89,11 +89,8 @@ async fn main() {
             .unwrap()
             .with_meter(1000.0)
             .with_colormap(rerun::components::Colormap::Viridis);
-        //println!("{:?}", res.iter().fold(0.0, |acc, x| x.w.max(acc)));
 
-        //let positions: Vec<_> = res.iter().map(|x| rerun::Position3D::new(x.x, x.y, x.z)).collect();
-        rec.log("depth_cloud", &depth_image);
-        //rec.log("depth_cloud", &rerun::Points3D::new(positions));
+        //rec.log("depth_cloud", &depth_image);
 
         println!("Rendering lidar beams");
         let start_time = Instant::now();
@@ -102,7 +99,7 @@ async fn main() {
             .render_lidar_beams(&scene, &device, &queue, &lidar_pose)
             .await;
         println!("Took {:?} to render a lidar frame", start_time.elapsed());
-        println!("{:?}", res); //res.iter().fold(0.0, |acc, x| x.max(acc)));
+        println!("{:?}", res);
     }
 
     let mut updated_instances = vec![];
@@ -132,9 +129,15 @@ async fn main() {
         .await;
     println!("{:?}", res.iter().fold(0.0, |acc, x| x.max(acc)));
 
+    println!("Rendering pointcloud");
+    let start_time = Instant::now();
     let lidar_pose = Affine3A::from_translation(Vec3::new(2.0, 0.0, 3.0));
     let res = lidar
         .render_lidar_pointcloud(&scene, &device, &queue, &lidar_pose)
         .await;
-    println!("{:?}", res); //res.iter().fold(0.0, |acc, x| x.max(acc)));
+    println!(
+        "Took {:?} to render a lidar pointcloud",
+        start_time.elapsed()
+    );
+    println!("{:?}", res);
 }

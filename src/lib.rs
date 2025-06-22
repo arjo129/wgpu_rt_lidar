@@ -107,7 +107,6 @@ impl RayTraceScene {
         assets: &Vec<AssetMesh>,
         instances: &Vec<Instance>,
     ) -> Self {
-
         let mut vertex_data = vec![];
         let mut index_data = vec![];
         let mut start_vertex_address = vec![];
@@ -144,8 +143,7 @@ impl RayTraceScene {
                 asset.vertex_buf.len(),
                 asset.index_buf.len()
             );
-            let geom_list = vec!
-            [wgpu::BlasTriangleGeometrySizeDescriptor {
+            let geom_list = vec![wgpu::BlasTriangleGeometrySizeDescriptor {
                 vertex_count: asset.vertex_buf.len() as u32,
                 vertex_format: wgpu::VertexFormat::Float32x3,
                 index_count: Some(asset.index_buf.len() as u32),
@@ -189,8 +187,7 @@ impl RayTraceScene {
         let blas_iter: Vec<_> = blas
             .iter()
             .enumerate()
-            .map(|(index, blas)| 
-            wgpu::BlasBuildEntry {
+            .map(|(index, blas)| wgpu::BlasBuildEntry {
                 blas,
                 geometry: wgpu::BlasGeometries::TriangleGeometries(vec![
                     wgpu::BlasTriangleGeometry {
