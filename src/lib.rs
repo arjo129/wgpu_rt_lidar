@@ -2,7 +2,6 @@ use std::{collections::HashMap, iter};
 
 use bytemuck_derive::{Pod, Zeroable};
 use glam::Affine3A;
-use rerun::components::RotationAxisAngle;
 use wgpu::util::DeviceExt;
 pub mod depth_camera;
 pub mod lidar;
