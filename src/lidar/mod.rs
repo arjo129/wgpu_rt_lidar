@@ -59,7 +59,97 @@ impl Lidar {
         }
     }
 
-    pub async fn render_lidar_beams(
+    pub async fn render_lidar_pointcloud(
+        &mut self,
+        scene: &RayTraceScene,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        pose: &Affine3A,
+    ) -> Vec<f32> {
+        device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let compute_bind_group_layout = self.pointcloud_pipeline.get_bind_group_layout(0);
+        let lidar_positions = affine_to_4x4rows(pose);
+
+        let uniform_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Uniform Buffer"),
+            contents: bytemuck::cast_slice(&lidar_positions),
+            usage: wgpu::BufferUsages::UNIFORM,
+        });
+
+        let raw_buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: (self.ray_directions.len() * 4 * 4) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+
+        let compute_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: None,
+            layout: &compute_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: raw_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::AccelerationStructure(
+                        &scene.tlas_package.tlas(),
+                    ),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: self.ray_direction_gpu_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: uniform_buf.as_entire_binding(),
+                },
+            ],
+        });
+
+        let staging_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: raw_buf.size(),
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let mut encoder =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+
+        encoder.build_acceleration_structures(iter::empty(), iter::once(&scene.tlas_package));
+
+        {
+            let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: None,
+                timestamp_writes: None,
+            });
+            cpass.set_pipeline(&self.pointcloud_pipeline);
+            cpass.set_bind_group(0, Some(&compute_bind_group), &[]);
+            cpass.dispatch_workgroups(self.ray_directions.len() as u32, 1, 1);
+        }
+        encoder.copy_buffer_to_buffer(&raw_buf, 0, &staging_buffer, 0, staging_buffer.size());
+
+        queue.submit(Some(encoder.finish()));
+        let buffer_slice = staging_buffer.slice(..);
+        let (sender, receiver) = flume::bounded(1);
+        buffer_slice.map_async(wgpu::MapMode::Read, move |v| sender.send(v).unwrap());
+
+        device.poll(wgpu::Maintain::wait()).panic_on_timeout();
+
+        receiver.recv().unwrap().unwrap();
+
+        {
+            let view = buffer_slice.get_mapped_range();
+            let result: Vec<f32> = bytemuck::cast_slice(&view).to_vec();
+
+            drop(view);
+            staging_buffer.unmap();
+            return result;
+        }
+    }
+
+     pub async fn render_lidar_beams(
         &mut self,
         scene: &RayTraceScene,
         device: &wgpu::Device,
@@ -142,100 +232,6 @@ impl Lidar {
         {
             let view = buffer_slice.get_mapped_range();
             let result: Vec<f32> = bytemuck::cast_slice(&view).to_vec();
-
-            drop(view);
-            staging_buffer.unmap();
-            return result;
-        }
-    }
-
-    pub async fn render_lidar_pointcloud(
-        &mut self,
-        scene: &RayTraceScene,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        pose: &Affine3A,
-    ) -> Vec<Vec4> {
-        device.push_error_scope(wgpu::ErrorFilter::Validation);
-        let compute_bind_group_layout = self.pointcloud_pipeline.get_bind_group_layout(0);
-        let lidar_positions = affine_to_4x4rows(pose);
-
-        let uniform_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Uniform Buffer"),
-            contents: bytemuck::cast_slice(&lidar_positions),
-            usage: wgpu::BufferUsages::UNIFORM,
-        });
-
-        let p: Vec<_> = self
-            .ray_directions
-            .iter()
-            .map(|v| Vec4::new(1.0, 1.0, 1.0, 0.0))
-            .collect();
-        let raw_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Output array"),
-            contents: bytemuck::cast_slice(&p),
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-        });
-
-        let compute_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: None,
-            layout: &compute_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: raw_buf.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::AccelerationStructure(
-                        &scene.tlas_package.tlas(),
-                    ),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: self.ray_direction_gpu_buf.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: uniform_buf.as_entire_binding(),
-                },
-            ],
-        });
-
-        let staging_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: None,
-            size: raw_buf.size(),
-            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        let mut encoder =
-            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-
-        encoder.build_acceleration_structures(iter::empty(), iter::once(&scene.tlas_package));
-
-        {
-            let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: None,
-                timestamp_writes: None,
-            });
-            cpass.set_pipeline(&self.pointcloud_pipeline);
-            cpass.set_bind_group(0, Some(&compute_bind_group), &[]);
-            cpass.dispatch_workgroups(self.ray_directions.len() as u32, 1, 1);
-        }
-        encoder.copy_buffer_to_buffer(&raw_buf, 0, &staging_buffer, 0, staging_buffer.size());
-
-        queue.submit(Some(encoder.finish()));
-        let buffer_slice = staging_buffer.slice(..);
-        let (sender, receiver) = flume::bounded(1);
-        buffer_slice.map_async(wgpu::MapMode::Read, move |v| sender.send(v).unwrap());
-
-        device.poll(wgpu::Maintain::wait()).panic_on_timeout();
-
-        receiver.recv().unwrap().unwrap();
-
-        {
-            let view = buffer_slice.get_mapped_range();
-            let result: Vec<Vec4> = bytemuck::cast_slice(&view).to_vec();
 
             drop(view);
             staging_buffer.unmap();
