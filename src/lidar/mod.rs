@@ -1,9 +1,19 @@
 use std::{borrow::Cow, iter};
 
 use glam::{Affine3A, Vec3, Vec4};
+use rand::rand_core::le;
 use wgpu::util::DeviceExt;
 
 use crate::{affine_to_4x4rows, RayTraceScene};
+
+#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+#[repr(C)]
+struct WorkGroupParameters {
+  width: u32,
+  height: u32,
+  depth: u32,
+  num_lidar_beams: u32,
+}
 
 pub struct Lidar {
     pipeline: wgpu::ComputePipeline,
@@ -76,6 +86,21 @@ impl Lidar {
             usage: wgpu::BufferUsages::UNIFORM,
         });
 
+        let work_group_params = WorkGroupParameters {
+            width: self.ray_directions.len() as u32,
+            height: 1,
+            depth: 1,
+            num_lidar_beams: self.ray_directions.len() as u32,
+        };
+
+        let work_group_params_buf = device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Work Group Parameters Buffer"),
+                contents: bytemuck::cast_slice(&[work_group_params]),
+                usage: wgpu::BufferUsages::UNIFORM,
+            },
+        );
+
         let raw_buf = device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
             size: (self.ray_directions.len() * 4 * 4) as u64,
@@ -104,6 +129,10 @@ impl Lidar {
                 wgpu::BindGroupEntry {
                     binding: 3,
                     resource: uniform_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: work_group_params_buf.as_entire_binding(),
                 },
             ],
         });
