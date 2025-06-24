@@ -93,7 +93,7 @@ pub struct RayTraceScene {
     pub(crate) vertex_buf: wgpu::Buffer,
     pub(crate) index_buf: wgpu::Buffer,
     pub(crate) blas: Vec<wgpu::Blas>,
-    pub(crate) tlas_package: wgpu::TlasPackage,
+    pub(crate) tlas_package: wgpu::Tlas,
 }
 
 impl RayTraceScene {
@@ -181,7 +181,7 @@ impl RayTraceScene {
             max_instances: instances.len() as u32,
         });
 
-        let mut tlas_package = wgpu::TlasPackage::new(tlas);
+        let mut tlas_package = tlas;
 
         for (idx, instance) in instances.iter().enumerate() {
             tlas_package[idx] = Some(wgpu::TlasInstance::new(

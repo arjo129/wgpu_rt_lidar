@@ -115,7 +115,7 @@ impl DepthCamera {
                 wgpu::BindGroupEntry {
                     binding: 1,
                     resource: wgpu::BindingResource::AccelerationStructure(
-                        &scene.tlas_package.tlas(),
+                        &scene.tlas_package,
                     ),
                 },
                 wgpu::BindGroupEntry {
@@ -202,7 +202,7 @@ impl DepthCamera {
                 wgpu::BindGroupEntry {
                     binding: 1,
                     resource: wgpu::BindingResource::AccelerationStructure(
-                        &scene.tlas_package.tlas(),
+                        &scene.tlas_package,
                     ),
                 },
                 wgpu::BindGroupEntry {

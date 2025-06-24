@@ -135,8 +135,8 @@ async fn main() {
                 required_features,
                 required_limits: wgpu::Limits::downlevel_defaults(),
                 memory_hints: wgpu::MemoryHints::MemoryUsage,
-            },
-            None,
+                trace: wgpu::Trace::Off
+            }
         )
         .await
     else {
