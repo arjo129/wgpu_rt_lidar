@@ -63,6 +63,6 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
     }
     else {
-      v_indices[index] = vec4f(0.0, 0.0, 0.0, 0.0); // No intersection
+      v_indices[index] = vec4f(10000.0, 10000.0, 100000.0, 100000.0); // No intersection
     }
 }
