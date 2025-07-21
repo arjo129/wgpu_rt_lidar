@@ -3,6 +3,7 @@ use rand::Rng;
 use std::{mem::size_of_val, result, str::FromStr};
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 
+use crate::utils::get_raytracing_gpu;
 use crate::{vertex, AssetMesh, RayTraceScene, Vertex};
 
 #[repr(C)]
@@ -227,29 +228,8 @@ impl DenseVoxelGpuRepresentation {
 
 /// Queries an approximate nearest neighbour for each point in the `points` vector.
 pub async fn query_nearest_neighbours(voxel: &DenseVoxel, points: Vec<Vec3>) -> Option<Vec<u32>> {
-    // Instantiates instance of WebGPU
     let instance = wgpu::Instance::default();
-
-    // `request_adapter` instantiates the general connection to the GPU
-    let adapter = instance
-        .request_adapter(&wgpu::RequestAdapterOptions::default())
-        .await?;
-
-    // `request_device` instantiates the feature specific connection to the GPU, defining some parameters,
-    //  `features` being the available features.
-    let (device, queue) = adapter
-        .request_device(
-            &wgpu::DeviceDescriptor {
-                label: None,
-                required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits::downlevel_defaults(),
-                memory_hints: wgpu::MemoryHints::MemoryUsage,
-            },
-            None,
-        )
-        .await
-        .unwrap();
-
+    let (adapter, device, queue) = get_raytracing_gpu(&instance).await;
     dense_voxel_nearest_neighbor(&device, &queue, voxel, &points).await
 }
 
@@ -397,7 +377,7 @@ async fn dense_voxel_nearest_neighbor(
     // Poll the device in a blocking manner so that our future resolves.
     // In an actual application, `device.poll(...)` should
     // be called in an event loop or on another thread.
-    device.poll(wgpu::Maintain::wait()).panic_on_timeout();
+    device.poll(wgpu::PollType::wait()).unwrap();
 
     // Awaits until `buffer_future` can be read from
     if let Ok(Ok(())) = receiver.recv_async().await {
@@ -544,7 +524,7 @@ pub async fn execute_experimental_gpu_rrt(
             },
             wgpu::BindGroupEntry {
                 binding: 4,
-                resource: wgpu::BindingResource::AccelerationStructure(&lidar.tlas_package.tlas()),
+                resource: wgpu::BindingResource::AccelerationStructure(&lidar.tlas_package),
             },
             wgpu::BindGroupEntry {
                 binding: 5,
@@ -587,7 +567,7 @@ pub async fn execute_experimental_gpu_rrt(
     // Poll the device in a blocking manner so that our future resolves.
     // In an actual application, `device.poll(...)` should
     // be called in an event loop or on another thread.
-    device.poll(wgpu::Maintain::wait()).panic_on_timeout();
+    device.poll(wgpu::PollType::wait()).unwrap();
 
     // Awaits until `buffer_future` can be read from
     if let Ok(Ok(())) = receiver.recv_async().await {

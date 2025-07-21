@@ -93,9 +93,7 @@ impl Lidar {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::AccelerationStructure(
-                        &scene.tlas_package,
-                    ),
+                    resource: wgpu::BindingResource::AccelerationStructure(&scene.tlas_package),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
@@ -187,9 +185,7 @@ impl Lidar {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::AccelerationStructure(
-                        &scene.tlas_package,
-                    ),
+                    resource: wgpu::BindingResource::AccelerationStructure(&scene.tlas_package),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,

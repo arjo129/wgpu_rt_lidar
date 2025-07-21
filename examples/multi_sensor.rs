@@ -16,7 +16,9 @@ async fn main() {
     let instance = wgpu::Instance::default();
     let (adapter, device, queue) = get_raytracing_gpu(&instance).await;
 
-    let rec = rerun::RecordingStreamBuilder::new("rerun_example_app").spawn().unwrap();
+    let rec = rerun::RecordingStreamBuilder::new("rerun_example_app")
+        .spawn()
+        .unwrap();
 
     // Lets add a cube as an asset
     let cube = create_cube(1.0);
