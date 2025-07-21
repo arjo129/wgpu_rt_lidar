@@ -28,7 +28,13 @@ pub struct DepthCamera {
 
 impl DepthCamera {
     /// Create a new depth camera sensor
-    pub async fn new(device: &wgpu::Device, width: u32, height: u32, fov_y: f32) -> Self {
+    pub async fn new(
+        device: &wgpu::Device,
+        width: u32,
+        height: u32,
+        fov_y: f32,
+        _max_depth: f32,
+    ) -> Self {
         let uniforms = {
             let view = Mat4::look_at_rh(Vec3::new(0.0, 0.0, 2.5), Vec3::ZERO, Vec3::Y);
             let proj = Mat4::perspective_rh(
@@ -252,5 +258,13 @@ impl DepthCamera {
             staging_buffer.unmap();
             return result;
         }
+    }
+
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+
+    pub fn height(&self) -> u32 {
+        self.height
     }
 }

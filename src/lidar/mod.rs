@@ -157,7 +157,7 @@ impl Lidar {
         pose: &Affine3A,
     ) -> Vec<Vec4> {
         device.push_error_scope(wgpu::ErrorFilter::Validation);
-        let compute_bind_group_layout = self.pipeline.get_bind_group_layout(0);
+        let compute_bind_group_layout = self.pointcloud_pipeline.get_bind_group_layout(0);
         let lidar_positions = affine_to_4x4rows(pose);
 
         let uniform_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -166,11 +166,15 @@ impl Lidar {
             usage: wgpu::BufferUsages::UNIFORM,
         });
 
-        let raw_buf = device.create_buffer(&wgpu::BufferDescriptor {
-            label: None,
-            size: (self.ray_directions.len() * 4 * 4) as u64,
+        let p: Vec<_> = self
+            .ray_directions
+            .iter()
+            .map(|v| Vec4::new(1.0, 1.0, 1.0, 0.0))
+            .collect();
+        let raw_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Output array"),
+            contents: bytemuck::cast_slice(&p),
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-            mapped_at_creation: false,
         });
 
         let compute_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -214,7 +218,7 @@ impl Lidar {
                 label: None,
                 timestamp_writes: None,
             });
-            cpass.set_pipeline(&self.pipeline);
+            cpass.set_pipeline(&self.pointcloud_pipeline);
             cpass.set_bind_group(0, Some(&compute_bind_group), &[]);
             cpass.dispatch_workgroups(self.ray_directions.len() as u32, 1, 1);
         }

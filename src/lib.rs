@@ -1,10 +1,12 @@
-use std::iter;
+use std::{collections::HashMap, iter};
 
 use bytemuck_derive::{Pod, Zeroable};
 use glam::Affine3A;
+use rerun::components::RotationAxisAngle;
 use wgpu::util::DeviceExt;
 pub mod depth_camera;
 pub mod lidar;
+pub mod utils;
 
 /// Helper function to convert an affine matrix to a 4x3 row matrix.
 #[inline]
@@ -94,6 +96,8 @@ pub struct RayTraceScene {
     pub(crate) index_buf: wgpu::Buffer,
     pub(crate) blas: Vec<wgpu::Blas>,
     pub(crate) tlas_package: wgpu::Tlas,
+    pub(crate) assets: Vec<AssetMesh>,
+    pub(crate) instances: Vec<Instance>
 }
 
 impl RayTraceScene {
@@ -104,41 +108,21 @@ impl RayTraceScene {
         assets: &Vec<AssetMesh>,
         instances: &Vec<Instance>,
     ) -> Self {
-        let (vertex_data, index_data, start_vertex_address, start_indices_address): (
-            Vec<_>,
-            Vec<u16>,
-            Vec<usize>,
-            Vec<usize>,
-        ) = assets.iter().fold(
-            (vec![], vec![], vec![0], vec![0]),
-            |(vertex_buf, index_buf, start_buf, indices_buf), asset| {
-                // TODO
-                let mut start_vertex_buf = start_buf.clone();
-                if let Some(last) = start_vertex_buf.last() {
-                    start_vertex_buf.push(*last + vertex_buf.len());
-                }
 
-                let mut start_indices_buf = indices_buf.clone();
-                if let Some(last) = start_indices_buf.last() {
-                    start_indices_buf.push(*last + indices_buf.len());
-                }
-
-                (
-                    vertex_buf
-                        .iter()
-                        .chain(asset.vertex_buf.iter())
-                        .cloned()
-                        .collect::<Vec<Vertex>>(),
-                    index_buf
-                        .iter()
-                        .chain(asset.index_buf.iter())
-                        .cloned()
-                        .collect::<Vec<u16>>(),
-                    start_vertex_buf,
-                    start_indices_buf,
-                )
-            },
-        ); //create_vertices();
+        let mut vertex_data = vec![];
+        let mut index_data = vec![];
+        let mut start_vertex_address = vec![];
+        let mut start_indices_address = vec![];
+        let mut geometries = vec![];
+        for asset in assets {
+            start_vertex_address.push(vertex_data.len());
+            vertex_data.extend(asset.vertex_buf.iter().cloned());
+            let start_indices = index_data.len();
+            start_indices_address.push(index_data.len());
+            index_data.extend(asset.index_buf.iter().cloned());
+            let end_indices = index_data.len();
+            geometries.push(start_indices..end_indices);
+        }
 
         let vertex_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex Buffer"),
@@ -152,27 +136,36 @@ impl RayTraceScene {
             usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::BLAS_INPUT,
         });
 
-        let geometry_desc_sizes = assets
-            .iter()
-            .map(|asset| wgpu::BlasTriangleGeometrySizeDescriptor {
+        let mut geometry_desc_sizes = vec![];
+        let mut blas = vec![];
+        println!("Creating BLAS for {} assets", assets.len());
+        for asset in assets {
+            println!(
+                "Creating BLAS for asset with {} vertices and {} indices",
+                asset.vertex_buf.len(),
+                asset.index_buf.len()
+            );
+            let geom_list = vec!
+            [wgpu::BlasTriangleGeometrySizeDescriptor {
                 vertex_count: asset.vertex_buf.len() as u32,
                 vertex_format: wgpu::VertexFormat::Float32x3,
                 index_count: Some(asset.index_buf.len() as u32),
                 index_format: Some(wgpu::IndexFormat::Uint16),
                 flags: wgpu::AccelerationStructureGeometryFlags::OPAQUE,
-            })
-            .collect::<Vec<_>>();
+            }];
+            geometry_desc_sizes.push(geom_list.clone());
 
-        let blas = vec![device.create_blas(
-            &wgpu::CreateBlasDescriptor {
-                label: None,
-                flags: wgpu::AccelerationStructureFlags::PREFER_FAST_TRACE,
-                update_mode: wgpu::AccelerationStructureUpdateMode::Build,
-            },
-            wgpu::BlasGeometrySizeDescriptors::Triangles {
-                descriptors: geometry_desc_sizes.clone(),
-            },
-        )];
+            blas.push(device.create_blas(
+                &wgpu::CreateBlasDescriptor {
+                    label: Some(&format!("BLAS {}", blas.len())),
+                    flags: wgpu::AccelerationStructureFlags::PREFER_FAST_TRACE,
+                    update_mode: wgpu::AccelerationStructureUpdateMode::Build,
+                },
+                wgpu::BlasGeometrySizeDescriptors::Triangles {
+                    descriptors: geom_list.clone(),
+                },
+            ));
+        }
 
         let tlas = device.create_tlas(&wgpu::CreateTlasDescriptor {
             label: None,
@@ -197,11 +190,12 @@ impl RayTraceScene {
         let blas_iter: Vec<_> = blas
             .iter()
             .enumerate()
-            .map(|(index, blas)| wgpu::BlasBuildEntry {
+            .map(|(index, blas)| 
+            wgpu::BlasBuildEntry {
                 blas,
                 geometry: wgpu::BlasGeometries::TriangleGeometries(vec![
                     wgpu::BlasTriangleGeometry {
-                        size: &geometry_desc_sizes[index],
+                        size: &geometry_desc_sizes[index][0],
                         vertex_buffer: &vertex_buf,
                         first_vertex: start_vertex_address[index] as u32,
                         vertex_stride: std::mem::size_of::<Vertex>() as u64,
@@ -223,9 +217,12 @@ impl RayTraceScene {
             index_buf,
             blas,
             tlas_package,
+            assets: assets.clone(),
+            instances: instances.clone(),
         }
     }
 
+    /// Set the transform of instances within a scene.
     pub async fn set_transform(
         &mut self,
         device: &wgpu::Device,
@@ -249,7 +246,58 @@ impl RayTraceScene {
         let mut encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
         encoder.build_acceleration_structures(iter::empty(), iter::once(&self.tlas_package));
+        // Warning: SLOW!
+        self.instances = update_instance.clone();
 
         Ok(())
+    }
+
+    /// Visualize the scene in rerun.
+    pub fn visualize(&self, rerun: &rerun::RecordingStream) {
+        // TODO
+        for (idx, mesh) in self.assets.iter().enumerate() {
+            let vertex: Vec<_> = mesh
+                .vertex_buf
+                .iter()
+                .map(|a| [a._pos[0], a._pos[1], a._pos[2]])
+                .collect();
+            let indices: Vec<_> = mesh
+                .index_buf
+                .chunks(3)
+                .map(|a| [a[0] as u32, a[1] as u32, a[2] as u32])
+                .collect();
+            rerun.log(
+                format!("mesh_{}", idx),
+                &rerun::Mesh3D::new(vertex).with_triangle_indices(indices),
+            );
+        }
+
+        let mut instance_map = HashMap::new();
+        for (idx, instance) in self.instances.iter().enumerate() {
+            let translations = [
+                instance.transform.translation.x,
+                instance.transform.translation.y,
+                instance.transform.translation.z,
+            ];
+            let rotation = glam::Quat::from_mat3a(&instance.transform.matrix3);
+            let rotation =
+                rerun::Quaternion::from_xyzw([rotation.x, rotation.y, rotation.z, rotation.w]);
+            let Some(mesh_idx) = instance_map.get_mut(&instance.asset_mesh_index) else {
+                instance_map.insert(idx, vec![(translations, rotation)]);
+                continue;
+            };
+            mesh_idx.push((translations, rotation));
+        }
+
+        for (idx, transform) in instance_map.iter() {
+            let translations = transform.iter().map(|f| f.0);
+            let rotations = transform.iter().map(|f| f.1);
+            rerun.log(
+                format!("mesh_{}", idx),
+                &rerun::InstancePoses3D::new()
+                    .with_translations(translations)
+                    .with_quaternions(rotations),
+            );
+        }
     }
 }

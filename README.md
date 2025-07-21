@@ -15,3 +15,7 @@ If you'd like to use this take a look at `multi_sensor.rs`
 
 Currently this relies on a seperate GPU call per sensor. It should be possible to Batch multiple sensor calls from the same scene. 
 However, there will need to be some work done to accomodate the different 
+
+## API Stability Guarantees
+
+NONE. Currently in active development.
