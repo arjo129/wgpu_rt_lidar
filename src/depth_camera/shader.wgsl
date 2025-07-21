@@ -77,4 +77,8 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     if (intersection.kind != RAY_QUERY_INTERSECTION_NONE) {
         raw_buf[global_id.x * target_size.y + global_id.y] = intersection.t;
     }
+    else
+    {
+        raw_buf[global_id.x * target_size.y + global_id.y] = 99999.0;
+    }
 }

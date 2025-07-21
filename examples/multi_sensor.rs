@@ -67,6 +67,7 @@ async fn main() {
                 Mat4::look_at_rh(Vec3::new(0.0, 0.0, 2.5 + i as f32), Vec3::ZERO, Vec3::Y),
             )
             .await;
+        println!("{:?}", res);
         println!("Took {:?} to render a depth frame", start_time.elapsed());
         use ndarray::ShapeBuilder;
 
