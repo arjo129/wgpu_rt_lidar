@@ -95,9 +95,9 @@ pub struct RayTraceScene {
     pub(crate) vertex_buf: wgpu::Buffer,
     pub(crate) index_buf: wgpu::Buffer,
     pub(crate) blas: Vec<wgpu::Blas>,
-    pub(crate) tlas_package: wgpu::TlasPackage,
-    assets: Vec<AssetMesh>,
-    instances: Vec<Instance>,
+    pub(crate) tlas_package: wgpu::Tlas,
+    pub(crate) assets: Vec<AssetMesh>,
+    pub(crate) instances: Vec<Instance>,
 }
 
 impl RayTraceScene {
@@ -108,7 +108,6 @@ impl RayTraceScene {
         assets: &Vec<AssetMesh>,
         instances: &Vec<Instance>,
     ) -> Self {
-
         let mut vertex_data = vec![];
         let mut index_data = vec![];
         let mut start_vertex_address = vec![];
@@ -145,8 +144,7 @@ impl RayTraceScene {
                 asset.vertex_buf.len(),
                 asset.index_buf.len()
             );
-            let geom_list = vec!
-            [wgpu::BlasTriangleGeometrySizeDescriptor {
+            let geom_list = vec![wgpu::BlasTriangleGeometrySizeDescriptor {
                 vertex_count: asset.vertex_buf.len() as u32,
                 vertex_format: wgpu::VertexFormat::Float32x3,
                 index_count: Some(asset.index_buf.len() as u32),
@@ -174,7 +172,7 @@ impl RayTraceScene {
             max_instances: instances.len() as u32,
         });
 
-        let mut tlas_package = wgpu::TlasPackage::new(tlas);
+        let mut tlas_package = tlas;
 
         for (idx, instance) in instances.iter().enumerate() {
             tlas_package[idx] = Some(wgpu::TlasInstance::new(
@@ -190,8 +188,7 @@ impl RayTraceScene {
         let blas_iter: Vec<_> = blas
             .iter()
             .enumerate()
-            .map(|(index, blas)| 
-            wgpu::BlasBuildEntry {
+            .map(|(index, blas)| wgpu::BlasBuildEntry {
                 blas,
                 geometry: wgpu::BlasGeometries::TriangleGeometries(vec![
                     wgpu::BlasTriangleGeometry {

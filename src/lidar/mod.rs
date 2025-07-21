@@ -93,9 +93,7 @@ impl Lidar {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::AccelerationStructure(
-                        &scene.tlas_package.tlas(),
-                    ),
+                    resource: wgpu::BindingResource::AccelerationStructure(&scene.tlas_package),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
@@ -135,7 +133,7 @@ impl Lidar {
         let (sender, receiver) = flume::bounded(1);
         buffer_slice.map_async(wgpu::MapMode::Read, move |v| sender.send(v).unwrap());
 
-        device.poll(wgpu::Maintain::wait()).panic_on_timeout();
+        device.poll(wgpu::PollType::wait()).unwrap();
 
         receiver.recv().unwrap().unwrap();
 
@@ -187,9 +185,7 @@ impl Lidar {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::AccelerationStructure(
-                        &scene.tlas_package.tlas(),
-                    ),
+                    resource: wgpu::BindingResource::AccelerationStructure(&scene.tlas_package),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
@@ -229,7 +225,7 @@ impl Lidar {
         let (sender, receiver) = flume::bounded(1);
         buffer_slice.map_async(wgpu::MapMode::Read, move |v| sender.send(v).unwrap());
 
-        device.poll(wgpu::Maintain::wait()).panic_on_timeout();
+        device.poll(wgpu::PollType::wait()).unwrap();
 
         receiver.recv().unwrap().unwrap();
 
