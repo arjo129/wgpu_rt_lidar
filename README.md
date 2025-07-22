@@ -11,6 +11,18 @@ The API for using the raytracing models is really simple and we provide integrat
 
 If you'd like to use this take a look at `multi_sensor.rs`
 
+## Running the Example
+
+You will need rerun version `0.22.*`. The way to install it is:
+```
+cargo binstall rerun-cli==0.22.0
+```
+
+Running should bring up a depth map with an array of cubes.
+```
+cargo run --example multi_sensor
+```
+
 ## Future improvements
 
 Currently this relies on a seperate GPU call per sensor. It should be possible to Batch multiple sensor calls from the same scene. 
