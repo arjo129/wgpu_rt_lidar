@@ -9,10 +9,10 @@ use crate::{affine_to_4x4rows, RayTraceScene};
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 struct WorkGroupParameters {
-  width: u32,
-  height: u32,
-  depth: u32,
-  num_lidar_beams: u32,
+    width: u32,
+    height: u32,
+    depth: u32,
+    num_lidar_beams: u32,
 }
 
 pub struct Lidar {
@@ -23,6 +23,9 @@ pub struct Lidar {
 }
 
 impl Lidar {
+    pub fn no_hit_const() -> f32 {
+        10000
+    }
     pub async fn new(device: &wgpu::Device, ray_directions: Vec<Vec3>) -> Self {
         device.push_error_scope(wgpu::ErrorFilter::Validation);
         let ray_directions: Vec<_> = ray_directions
@@ -69,6 +72,57 @@ impl Lidar {
         }
     }
 
+    /// Calculate the best distribution for
+    fn distribute_workgroup(&self ,num_points: u32, device: &wgpu::Device) -> WorkGroupParameters {
+        if num_points == 0 {
+            panic!("no points");
+        }
+        let limits = device.limits();
+        // Assume these are the maximum allowed workgroup dimensions for your target GPU
+        let max_workgroup_x: u32 = limits.max_compute_workgroup_size_x;
+        let max_workgroup_y: u32 = limits.max_compute_workgroup_size_y;
+        let max_workgroup_z: u32 = limits.max_compute_workgroup_size_z;
+
+        if num_points > max_workgroup_x * max_workgroup_y * max_workgroup_z {
+            panic!("Too many points to render in a single GPU call {:?}, GPU only supports {:?}", num_points, 
+        max_workgroup_x * max_workgroup_y * max_workgroup_z);
+        }
+
+        let mut width = 1;
+        let mut height = 1;
+        let mut depth = 1;
+
+        let num_lidar_beams = num_points;
+
+        // Distribute across X first
+        width = num_lidar_beams.min(max_workgroup_x);
+        let mut remaining_beams = (num_lidar_beams + width - 1) / width; // Ceiling division
+
+        // If there are still beams left, distribute across Y
+        if remaining_beams > 1 {
+            height = remaining_beams.min(max_workgroup_x);
+            remaining_beams = (remaining_beams + height - 1) / height; // Ceiling division
+        }
+
+        // If there are still beams left, distribute across Z
+        if remaining_beams > 1 {
+            depth = remaining_beams.min(max_workgroup_x);
+            // At this point, if remaining_beams > 1 after this,
+            // it means total_beams cannot be covered by a single workgroup
+            // within the max dimension limits. For dispatching multiple workgroups,
+            // you'd typically calculate the number of workgroups needed in each dimension
+            // based on a fixed workgroup size. This function focuses on *one* workgroup's dimensions.
+        }
+
+        WorkGroupParameters {
+            width,
+            height,
+            depth,
+            num_lidar_beams,
+        }
+    }
+
+    /// Render the pointcloud in an asynchronous thread
     pub async fn render_lidar_pointcloud(
         &mut self,
         scene: &RayTraceScene,
@@ -86,20 +140,12 @@ impl Lidar {
             usage: wgpu::BufferUsages::UNIFORM,
         });
 
-        let work_group_params = WorkGroupParameters {
-            width: self.ray_directions.len() as u32,
-            height: 1,
-            depth: 1,
-            num_lidar_beams: self.ray_directions.len() as u32,
-        };
-
-        let work_group_params_buf = device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Work Group Parameters Buffer"),
-                contents: bytemuck::cast_slice(&[work_group_params]),
-                usage: wgpu::BufferUsages::UNIFORM,
-            },
-        );
+        let work_group_params = self.distribute_workgroup(self.ray_directions.len() as u32, device);
+        let work_group_params_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Work Group Parameters Buffer"),
+            contents: bytemuck::cast_slice(&[work_group_params]),
+            usage: wgpu::BufferUsages::UNIFORM,
+        });
 
         let raw_buf = device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
