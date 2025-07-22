@@ -67,7 +67,7 @@ async fn main() {
                 Mat4::look_at_rh(Vec3::new(0.0, 0.0, 2.5 + i as f32), Vec3::ZERO, Vec3::Y),
             )
             .await;
-        println!("{:?}", res);
+        //println!("{:?}", res);
         println!("Took {:?} to render a depth frame", start_time.elapsed());
         use ndarray::ShapeBuilder;
 
@@ -100,7 +100,7 @@ async fn main() {
             .render_lidar_beams(&scene, &device, &queue, &lidar_pose)
             .await;
         println!("Took {:?} to render a lidar frame", start_time.elapsed());
-        println!("{:?}", res);
+        //println!("{:?}", res);
     }
 
     let mut updated_instances = vec![];
@@ -140,5 +140,11 @@ async fn main() {
         "Took {:?} to render a lidar pointcloud",
         start_time.elapsed()
     );
-    println!("{:?}", res);
+    let p = res.chunks(4).filter(|p| p[3] < Lidar::no_hit_const()).map(|p| (p[0], p[1], p[2]));
+
+    rec.log(
+        "points",
+        &rerun::Points3D::new(p),
+    ).unwrap();
+    
 }
