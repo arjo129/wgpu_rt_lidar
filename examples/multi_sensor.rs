@@ -16,9 +16,9 @@ async fn main() {
     let instance = wgpu::Instance::default();
     let (_, device, queue) = get_raytracing_gpu(&instance).await;
 
-    //let rec = rerun::RecordingStreamBuilder::new("depth_camera_vis")
-    //    .spawn()
-    //    .unwrap();
+    let rec = rerun::RecordingStreamBuilder::new("depth_camera_vis")
+        .spawn()
+        .unwrap();
 
     // Lets add a cube as an asset
     let cube = create_cube(1.0);
@@ -54,7 +54,7 @@ async fn main() {
         .collect::<Vec<_>>();
     let mut lidar = Lidar::new(&device, lidar_beams).await;
 
-    //scene.visualize(&rec);
+    scene.visualize(&rec);
 
     // Move the camera back, the cubes are at -30
     for i in 0..3 {
@@ -91,7 +91,7 @@ async fn main() {
             .with_meter(1000.0)
             .with_colormap(rerun::components::Colormap::Viridis);
 
-        //rec.log("depth_cloud", &depth_image);
+        rec.log("depth_cloud", &depth_image);
 
         println!("Rendering lidar beams");
         let start_time = Instant::now();

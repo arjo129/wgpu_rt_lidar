@@ -24,7 +24,7 @@ pub struct Lidar {
 
 impl Lidar {
     pub fn no_hit_const() -> f32 {
-        10000
+        10000.0
     }
     pub async fn new(device: &wgpu::Device, ray_directions: Vec<Vec3>) -> Self {
         device.push_error_scope(wgpu::ErrorFilter::Validation);
@@ -73,7 +73,7 @@ impl Lidar {
     }
 
     /// Calculate the best distribution for
-    fn distribute_workgroup(&self ,num_points: u32, device: &wgpu::Device) -> WorkGroupParameters {
+    fn distribute_workgroup(&self, num_points: u32, device: &wgpu::Device) -> WorkGroupParameters {
         if num_points == 0 {
             panic!("no points");
         }
@@ -84,8 +84,11 @@ impl Lidar {
         let max_workgroup_z: u32 = limits.max_compute_workgroup_size_z;
 
         if num_points > max_workgroup_x * max_workgroup_y * max_workgroup_z {
-            panic!("Too many points to render in a single GPU call {:?}, GPU only supports {:?}", num_points, 
-        max_workgroup_x * max_workgroup_y * max_workgroup_z);
+            panic!(
+                "Too many points to render in a single GPU call {:?}, GPU only supports {:?}",
+                num_points,
+                max_workgroup_x * max_workgroup_y * max_workgroup_z
+            );
         }
 
         let mut width = 1;
