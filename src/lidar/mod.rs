@@ -1,6 +1,6 @@
 use std::{borrow::Cow, iter};
 
-use glam::{Affine3A, Vec3, Vec4};
+use glam::{Affine3A, Quat, Vec3, Vec4};
 use rand::rand_core::le;
 use wgpu::util::DeviceExt;
 
@@ -26,6 +26,21 @@ pub struct Lidar {
 }
 
 impl Lidar {
+    pub fn visualize_rays(&self, rec: &rerun::RecordingStream, lidar_pose: &Affine3A) {
+        let (_scale, rot, translation) = lidar_pose.to_scale_rotation_translation();
+        let vectors: Vec<[f32; 3]> = self
+            .ray_directions
+            .iter()
+            .map(|v| (rot * Vec3::new(v.x, v.y, v.z)).to_array())
+            .collect();
+        let origins = vec![translation.to_array(); self.ray_directions.len()];
+        rec.log(
+            "lidar_rays",
+            &rerun::Arrows3D::from_vectors(vectors).with_origins(origins),
+        )
+        .unwrap();
+    }
+
     /// Returns the constant value used to indicate a "no hit" from the LiDAR sensor.
     pub fn no_hit_const() -> f32 {
         10000.0
