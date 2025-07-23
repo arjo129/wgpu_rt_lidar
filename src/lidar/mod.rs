@@ -26,7 +26,6 @@ pub struct Lidar {
 }
 
 impl Lidar {
-
     pub fn visualize_rays(&self, rec: &rerun::RecordingStream, lidar_pose: &Affine3A, name: &str) {
         let (_scale, rot, translation) = lidar_pose.to_scale_rotation_translation();
         let vectors: Vec<[f32; 3]> = self

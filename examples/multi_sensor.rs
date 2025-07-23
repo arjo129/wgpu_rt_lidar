@@ -143,11 +143,11 @@ async fn main() {
     let p = res
         .chunks(4)
         .filter(|p| p[3] < Lidar::no_hit_const())
-        .map(|p| lidar_pose.transform_point3(Vec3::new(p[0], p[1], p[2])).to_array());
+        .map(|p| {
+            lidar_pose
+                .transform_point3(Vec3::new(p[0], p[1], p[2]))
+                .to_array()
+        });
     lidar.visualize_rays(&rec, &lidar_pose, "lidar_beams");
-    rec.log(
-        "points",
-        &rerun::Points3D::new(p),
-    ).unwrap();
-    
+    rec.log("points", &rerun::Points3D::new(p)).unwrap();
 }
