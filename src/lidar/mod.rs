@@ -15,6 +15,9 @@ struct WorkGroupParameters {
     num_lidar_beams: u32,
 }
 
+/// Represents a LiDAR sensor.
+///
+/// This struct manages the compute pipelines and buffers required for simulating a LiDAR sensor.
 pub struct Lidar {
     pipeline: wgpu::ComputePipeline,
     pointcloud_pipeline: wgpu::ComputePipeline,
@@ -23,9 +26,16 @@ pub struct Lidar {
 }
 
 impl Lidar {
+    /// Returns the constant value used to indicate a "no hit" from the LiDAR sensor.
     pub fn no_hit_const() -> f32 {
         10000.0
     }
+    /// Creates a new LiDAR sensor.
+    ///
+    /// # Arguments
+    ///
+    /// * `device` - The `wgpu::Device` to use for creating GPU resources.
+    /// * `ray_directions` - A list of `Vec3` representing the direction of each LiDAR beam.
     pub async fn new(device: &wgpu::Device, ray_directions: Vec<Vec3>) -> Self {
         device.push_error_scope(wgpu::ErrorFilter::Validation);
         let ray_directions: Vec<_> = ray_directions
@@ -125,7 +135,20 @@ impl Lidar {
         }
     }
 
-    /// Render the pointcloud in an asynchronous thread
+    /// Renders a LiDAR point cloud.
+    ///
+    /// This function dispatches a compute shader to trace the LiDAR beams and returns a point cloud.
+    ///
+    /// # Arguments
+    ///
+    /// * `scene` - The `RayTraceScene` to render.
+    /// * `device` - The `wgpu::Device` to use.
+    /// * `queue` - The `wgpu::Queue` to use for submitting commands.
+    /// * `pose` - The `Affine3A` transform of the LiDAR sensor.
+    ///
+    /// # Returns
+    ///
+    /// A `Vec<f32>` containing the point cloud data, where each point is represented by 4 floats (x, y, z, intensity).
     pub async fn render_lidar_pointcloud(
         &mut self,
         scene: &RayTraceScene,
@@ -227,6 +250,20 @@ impl Lidar {
         }
     }
 
+    /// Renders the LiDAR beams and returns the hit distances.
+    ///
+    /// This function dispatches a compute shader to trace the LiDAR beams and returns the distance to the first hit for each beam.
+    ///
+    /// # Arguments
+    ///
+    /// * `scene` - The `RayTraceScene` to render.
+    /// * `device` - The `wgpu::Device` to use.
+    /// * `queue` - The `wgpu::Queue` to use for submitting commands.
+    /// * `pose` - The `Affine3A` transform of the LiDAR sensor.
+    ///
+    /// # Returns
+    ///
+    /// A `Vec<f32>` containing the hit distance for each LiDAR beam.
     pub async fn render_lidar_beams(
         &mut self,
         scene: &RayTraceScene,
