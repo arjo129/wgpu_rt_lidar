@@ -56,7 +56,7 @@ fn affine_to_4x4rows(mat: &Affine3A) -> [f32; 16] {
         0.1,
     ]
 }
-/// A simple vertex with a position.
+/// A simple vertex with a position and texture coordinates.
 /// This is used for loading mesh data into the GPU.
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, Debug)]
@@ -65,7 +65,11 @@ pub struct Vertex {
     _tex_coord: [f32; 2],
 }
 
-/// A simple function to create a vertex with a position.
+/// Creates a new `Vertex` with the given 3D position.
+///
+/// # Arguments
+///
+/// * `pos` - A 3-element array representing the x, y, and z coordinates.
 pub fn vertex(pos: [f32; 3]) -> Vertex {
     Vertex {
         _pos: [pos[0], pos[1], pos[2], 1.0],
@@ -73,23 +77,32 @@ pub fn vertex(pos: [f32; 3]) -> Vertex {
     }
 }
 
-/// Representation of a mesh asset.
+/// Represents a mesh asset, containing vertex and index data.
+///
+/// This struct holds the raw geometry data for a 3D model.
 #[derive(Clone, Debug)]
 pub struct AssetMesh {
+    /// The vertex buffer containing the mesh's vertices.
     pub vertex_buf: Vec<Vertex>,
+    /// The index buffer defining the mesh's triangles.
     pub index_buf: Vec<u16>,
 }
 
-/// Representation of an instance of a mesh asset.
+/// Represents an instance of a mesh asset in the scene.
+///
+/// Each instance has a reference to a mesh asset and its own transform.
 #[derive(Clone, Debug)]
 pub struct Instance {
+    /// The index of the `AssetMesh` in the scene's asset list.
     pub asset_mesh_index: usize,
+    /// The 3D transformation of the instance.
     pub transform: Affine3A,
 }
 
-/// A ray tracing scene. Use this struct to create a scene which can be raytraced
-/// using any hardware accelerated raytracing backend. You can load meshes and instances
-/// to create a scene.
+/// A hardware-accelerated ray tracing scene.
+///
+/// This struct manages the 3D scene, including mesh assets and instances,
+/// and provides the necessary structures for GPU-based ray tracing.
 pub struct RayTraceScene {
     pub(crate) vertex_buf: wgpu::Buffer,
     pub(crate) index_buf: wgpu::Buffer,
@@ -100,7 +113,17 @@ pub struct RayTraceScene {
 }
 
 impl RayTraceScene {
-    /// Create a new ray tracing scene. Requires a device, queue, list of assets, and list of instances.
+    /// Creates a new ray tracing scene.
+    ///
+    /// This function initializes the scene, builds the Bottom-Level Acceleration Structures (BLAS)
+    /// for each mesh asset, and the Top-Level Acceleration Structure (TLAS) for the instances.
+    ///
+    /// # Arguments
+    ///
+    /// * `device` - The `wgpu::Device` to use for creating GPU resources.
+    /// * `queue` - The `wgpu::Queue` to use for submitting commands.
+    /// * `assets` - A list of `AssetMesh` to populate the scene with.
+    /// * `instances` - A list of `Instance` to place in the scene.
     pub async fn new(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
@@ -218,7 +241,17 @@ impl RayTraceScene {
         }
     }
 
-    /// Set the transform of instances within a scene.
+    /// Updates the transform of instances within the scene.
+    ///
+    /// This function updates the Top-Level Acceleration Structure (TLAS) to reflect
+    /// the new transforms of the specified instances.
+    ///
+    /// # Arguments
+    ///
+    /// * `device` - The `wgpu::Device` to use.
+    /// * `queue` - The `wgpu::Queue` to use for submitting commands.
+    /// * `update_instance` - A list of `Instance` with their new transforms.
+    /// * `idx` - A list of indices corresponding to the instances to update.
     pub async fn set_transform(
         &mut self,
         device: &wgpu::Device,
@@ -248,7 +281,14 @@ impl RayTraceScene {
         Ok(())
     }
 
-    /// Visualize the scene in rerun.
+    /// Visualizes the scene using the `rerun` library.
+    ///
+    /// This function logs the scene's meshes and instances to a `rerun` recording stream
+    /// for visualization and debugging.
+    ///
+    /// # Arguments
+    ///
+    /// * `rerun` - The `rerun::RecordingStream` to log the visualization to.
     pub fn visualize(&self, rerun: &rerun::RecordingStream) {
         // TODO
         for (idx, mesh) in self.assets.iter().enumerate() {
