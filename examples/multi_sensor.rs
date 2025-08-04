@@ -10,6 +10,7 @@ use wgpu_rt_lidar::{
     vertex, AssetMesh, Instance, RayTraceScene, Vertex,
 };
 
+/// This function is an example of a VLP-16 being used for 
 fn get_vlp16_spinning_beam_directions(azimuth_resolution_deg: f32) -> Vec<Vec3> {
     // Fixed vertical angles for the 16 Velodyne VLP-16 lasers
     let vertical_angles_deg: [f32; 16] = [
