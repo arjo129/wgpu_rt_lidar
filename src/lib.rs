@@ -3,6 +3,9 @@ use std::{collections::HashMap, iter};
 use bytemuck_derive::{Pod, Zeroable};
 use glam::Affine3A;
 use wgpu::util::DeviceExt;
+
+pub use wgpu;
+
 pub mod depth_camera;
 pub mod lidar;
 pub mod utils;
