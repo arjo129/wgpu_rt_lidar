@@ -2,6 +2,7 @@
 name = "wgpu_rt_lidar"
 version = "0.1.0"
 edition = "2021"
+description = "A hardware-accelerated ray tracing library for robotics and autonomy simulation, providing flexible LiDAR and depth camera models."
 
 [dependencies]
 bytemuck = "1.20.0"

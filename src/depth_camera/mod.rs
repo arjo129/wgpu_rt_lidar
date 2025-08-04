@@ -17,7 +17,9 @@ struct DepthCameraUniforms {
     padding: [f32; 2],
 }
 
-/// Representation for a depth camera sensor
+/// Represents a depth camera sensor.
+///
+/// This struct manages the compute pipelines and uniforms required for simulating a depth camera.
 pub struct DepthCamera {
     pipeline: wgpu::ComputePipeline,
     pointcloud_pipeline: wgpu::ComputePipeline,
@@ -27,7 +29,15 @@ pub struct DepthCamera {
 }
 
 impl DepthCamera {
-    /// Create a new depth camera sensor
+    /// Creates a new depth camera sensor.
+    ///
+    /// # Arguments
+    ///
+    /// * `device` - The `wgpu::Device` to use for creating GPU resources.
+    /// * `width` - The width of the depth camera image in pixels.
+    /// * `height` - The height of the depth camera image in pixels.
+    /// * `fov_y` - The vertical field of view in degrees.
+    /// * `_max_depth` - The maximum depth value.
     pub async fn new(
         device: &wgpu::Device,
         width: u32,
@@ -86,7 +96,20 @@ impl DepthCamera {
         }
     }
 
-    /// Render the depth camera sensor. Returns the depth image as a vector of f32.
+    /// Renders a depth image from the camera's perspective.
+    ///
+    /// This function dispatches a compute shader to trace rays from the camera and returns a depth image.
+    ///
+    /// # Arguments
+    ///
+    /// * `scene` - The `RayTraceScene` to render.
+    /// * `device` - The `wgpu::Device` to use.
+    /// * `queue` - The `wgpu::Queue` to use for submitting commands.
+    /// * `view_matrix` - The `Mat4` view matrix of the camera.
+    ///
+    /// # Returns
+    ///
+    /// A `Vec<f32>` containing the depth image data.
     pub async fn render_depth_camera(
         &mut self,
         scene: &RayTraceScene,
@@ -171,7 +194,20 @@ impl DepthCamera {
         }
     }
 
-    /// Render the depth camera sensor. Returns the depth image as a vector of f32.
+    /// Renders a point cloud from the camera's perspective.
+    ///
+    /// This function dispatches a compute shader to trace rays and generate a point cloud.
+    ///
+    /// # Arguments
+    ///
+    /// * `scene` - The `RayTraceScene` to render.
+    /// * `device` - The `wgpu::Device` to use.
+    /// * `queue` - The `wgpu::Queue` to use for submitting commands.
+    /// * `view_matrix` - The `Mat4` view matrix of the camera.
+    ///
+    /// # Returns
+    ///
+    /// A `Vec<Vec4>` containing the point cloud data, where each point is represented by a `Vec4` (x, y, z, w).
     pub async fn render_depth_camera_pointcloud(
         &mut self,
         scene: &RayTraceScene,
@@ -256,10 +292,12 @@ impl DepthCamera {
         }
     }
 
+    /// Returns the width of the depth camera image.
     pub fn width(&self) -> u32 {
         self.width
     }
 
+    /// Returns the height of the depth camera image.
     pub fn height(&self) -> u32 {
         self.height
     }

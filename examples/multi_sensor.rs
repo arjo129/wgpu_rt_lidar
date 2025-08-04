@@ -10,11 +10,58 @@ use wgpu_rt_lidar::{
     vertex, AssetMesh, Instance, RayTraceScene, Vertex,
 };
 
+fn get_vlp16_spinning_beam_directions(azimuth_resolution_deg: f32) -> Vec<Vec3> {
+    // Fixed vertical angles for the 16 Velodyne VLP-16 lasers
+    let vertical_angles_deg: [f32; 16] = [
+        -15.0, -13.0, -11.0, -9.0, -7.0, -5.0, -3.0, -1.0,
+        1.0, 3.0, 5.0, 7.0, 9.0, 11.0, 13.0, 15.0,
+    ];
+
+    let mut beam_directions: Vec<Vec3> = Vec::new();
+
+    // Determine the number of horizontal steps to cover 360 degrees
+    // We use `ceil` to ensure we cover the full 360 degrees even if it means
+    // slightly exceeding it on the last step, or adjusting the last step.
+    let num_azimuth_steps = (360.0 / azimuth_resolution_deg).ceil() as usize;
+
+    // Iterate through each horizontal (azimuth) step
+    for i in 0..num_azimuth_steps {
+        // Ensure the angle doesn't exceed 360 degrees (or wraps around)
+        let azimuth_angle_deg = (i as f32 * azimuth_resolution_deg) % 360.0;
+        let azimuth_angle_rad = azimuth_angle_deg.to_radians();
+
+        // Create a rotation quaternion for the current azimuth angle around the Z-axis (upwards)
+        // Assuming Z is the axis of rotation for the LiDAR.
+        let rotation_quat = Quat::from_rotation_y(azimuth_angle_rad);
+
+        // For each azimuth step, all 16 lasers fire simultaneously
+        for &vertical_angle_deg in vertical_angles_deg.iter() {
+            let vertical_angle_rad = vertical_angle_deg.to_radians();
+
+            // Define the initial direction of the beam in the sensor's local frame
+            // Assuming X-axis is forward, Y-axis is vertical (up/down), Z-axis is sideways.
+            let initial_beam_direction = Vec3::new(
+                vertical_angle_rad.cos(), // Component along the forward (X) axis
+                vertical_angle_rad.sin(), // Component along the vertical (Y) axis
+                0.0,
+            );
+
+            // Rotate the initial beam direction by the current azimuth angle
+            let rotated_beam_direction = rotation_quat * initial_beam_direction;
+
+            beam_directions.push(rotated_beam_direction);
+        }
+    }
+
+    beam_directions
+}
+
+
 #[tokio::main]
 async fn main() {
     // Set up a wgpu instance and device
     let instance = wgpu::Instance::default();
-    let (adapter, device, queue) = get_raytracing_gpu(&instance).await;
+    let (_, device, queue) = get_raytracing_gpu(&instance).await;
 
     let rec = rerun::RecordingStreamBuilder::new("rerun_example_app")
         .spawn()
@@ -44,14 +91,19 @@ async fn main() {
 
     let mut scene = RayTraceScene::new(&device, &queue, &vec![cube], &instances).await;
 
+    /// Set the camera frame size
     let mut depth_camera = DepthCamera::new(&device, 1024, 1024, 59.0, 50.0).await;
 
-    let lidar_beams = (0..256)
+    /// Set the lidar beams
+    let lidar_beams =  get_vlp16_spinning_beam_directions(0.5);
+    
+    /*let lidar_beams = (0..2040)
         .map(|f| {
-            let angle = 3.14 * f as f32 / 256.0;
+            let angle = 3.14 * f as f32 / 2040.0;
             Vec3::new(0.0, angle.sin(), angle.cos())
         })
-        .collect::<Vec<_>>();
+        .collect::<Vec<_>>();*/
+    
     let mut lidar = Lidar::new(&device, lidar_beams).await;
 
     scene.visualize(&rec);
@@ -67,6 +119,7 @@ async fn main() {
                 Mat4::look_at_rh(Vec3::new(0.0, 0.0, 2.5 + i as f32), Vec3::ZERO, Vec3::Y),
             )
             .await;
+        //println!("{:?}", res);
         println!("Took {:?} to render a depth frame", start_time.elapsed());
         use ndarray::ShapeBuilder;
 
@@ -89,11 +142,8 @@ async fn main() {
             .unwrap()
             .with_meter(1000.0)
             .with_colormap(rerun::components::Colormap::Viridis);
-        //println!("{:?}", res.iter().fold(0.0, |acc, x| x.w.max(acc)));
 
-        //let positions: Vec<_> = res.iter().map(|x| rerun::Position3D::new(x.x, x.y, x.z)).collect();
         rec.log("depth_cloud", &depth_image);
-        //rec.log("depth_cloud", &rerun::Points3D::new(positions));
 
         println!("Rendering lidar beams");
         let start_time = Instant::now();
@@ -102,7 +152,7 @@ async fn main() {
             .render_lidar_beams(&scene, &device, &queue, &lidar_pose)
             .await;
         println!("Took {:?} to render a lidar frame", start_time.elapsed());
-        println!("{:?}", res); //res.iter().fold(0.0, |acc, x| x.max(acc)));
+        //println!("{:?}", res);
     }
 
     let mut updated_instances = vec![];
@@ -132,9 +182,24 @@ async fn main() {
         .await;
     println!("{:?}", res.iter().fold(0.0, |acc, x| x.max(acc)));
 
+    println!("Rendering pointcloud");
+    let start_time = Instant::now();
     let lidar_pose = Affine3A::from_translation(Vec3::new(2.0, 0.0, 3.0));
     let res = lidar
         .render_lidar_pointcloud(&scene, &device, &queue, &lidar_pose)
         .await;
-    println!("{:?}", res); //res.iter().fold(0.0, |acc, x| x.max(acc)));
+    println!(
+        "Took {:?} to render a lidar pointcloud",
+        start_time.elapsed()
+    );
+    let p = res
+        .chunks(4)
+        .filter(|p| p[3] < Lidar::no_hit_const())
+        .map(|p| {
+            lidar_pose
+                .transform_point3(Vec3::new(p[0], p[1], p[2]))
+                .to_array()
+        });
+    lidar.visualize_rays(&rec, &lidar_pose, "lidar_beams");
+    rec.log("points", &rerun::Points3D::new(p)).unwrap();
 }

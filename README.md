@@ -1,15 +1,29 @@
-# Raytracing LiDAR models
+# WGPU_RT_LIDAR
 
-This crate provides a set of simple LiDAR models that can be used for raytracing on windows and linux as long as your graphics card support raytracing.
+This project is a high-performance, hardware-accelerated ray tracing library for robotics and autonomy simulation, written in Rust and using the `wgpu` graphics API. It provides a flexible and easy-to-use platform for simulating sensor data from LiDAR and depth cameras in 3D environments.
 
-This includes graphics cards like those on the Steam Deck, the intel battlemage (untested) and any NVidia RTX card. Support for raytracing is achieved through
-the use of the experimental API within `wgpu` which in turn wraps Vulkan and Direct3D.
+At its core, the library provides a `RayTraceScene` that can be populated with 3D mesh assets and instances. It leverages hardware-accelerated ray tracing through `wgpu`'s support for acceleration structures (BLAS and TLAS), enabling efficient rendering of complex, dynamic scenes.
 
-The API for using the raytracing models is really simple and we provide integration for gazebo here:
-- [Gazebo integration](https://github.com/arjo129/gz_wgpu_rt_lidar)
-- [TODO] Bevy integration
+The library offers two main sensor simulation modules:
 
-If you'd like to use this take a look at `multi_sensor.rs`
+*   **LiDAR:** The LiDAR module allows for the creation of custom LiDAR sensors with arbitrary beam patterns. It can simulate both the raw beam returns (distances) and generate 3D point clouds.
+*   **Depth Camera:** The depth camera module simulates a pinhole camera model to generate depth images and point clouds from the scene.
+
+Key features of the library include:
+
+*   **Hardware-Accelerated Ray Tracing:** Utilizes the `wgpu` API for high-performance ray tracing on modern GPUs.
+*   **Dynamic Scenes:** Supports dynamic scenes where objects can be added, removed, or moved at runtime.
+*   **Flexible Sensor Models:** Provides flexible and configurable models for both LiDAR and depth cameras.
+*   **Point Cloud Generation:** Can generate both depth images and 3D point clouds from the simulated sensors.
+*   **Visualization:** Integrates with the `rerun` visualization library for easy debugging and visualization of scenes and sensor data.
+*   **Asynchronous API:** The library is designed with an asynchronous API, allowing for efficient integration into larger applications.
+
+The project includes examples that demonstrate how to create a scene, configure and use the sensor models, and visualize the results. This library is an ideal tool for researchers and engineers working on robotics, autonomous driving, and other applications that require realistic sensor simulation.
+
+## Bindings
+
+This project only offers a rust crate that renders LiDAR and Depth Cameras, however we provide bindings to other simulators:
+* [Gazebo Binding](https://github.com/arjo129/gz_wgpu_rt_lidar)
 
 ## Future improvements
 
