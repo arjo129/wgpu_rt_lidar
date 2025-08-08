@@ -3,6 +3,9 @@ use std::{collections::HashMap, iter};
 use bytemuck_derive::{Pod, Zeroable};
 use glam::Affine3A;
 use wgpu::util::DeviceExt;
+
+pub use wgpu;
+
 pub mod depth_camera;
 pub mod lidar;
 pub mod utils;
@@ -107,9 +110,9 @@ pub struct RayTraceScene {
     pub(crate) vertex_buf: wgpu::Buffer,
     pub(crate) index_buf: wgpu::Buffer,
     pub(crate) blas: Vec<wgpu::Blas>,
-    pub(crate) tlas_package: wgpu::TlasPackage,
-    assets: Vec<AssetMesh>,
-    instances: Vec<Instance>,
+    pub(crate) tlas_package: wgpu::Tlas,
+    pub(crate) assets: Vec<AssetMesh>,
+    pub(crate) instances: Vec<Instance>,
 }
 
 impl RayTraceScene {
@@ -194,7 +197,7 @@ impl RayTraceScene {
             max_instances: instances.len() as u32,
         });
 
-        let mut tlas_package = wgpu::TlasPackage::new(tlas);
+        let mut tlas_package = tlas;
 
         for (idx, instance) in instances.iter().enumerate() {
             tlas_package[idx] = Some(wgpu::TlasInstance::new(

@@ -10,7 +10,7 @@ bytemuck_derive = "1.8.0"
 flume = "0.11.1"
 glam = { version = "0.29.2", features = ["bytemuck"] }
 tokio = {version ="1.41.1",  features = ["full"]}
-wgpu = { git = "https://github.com/gfx-rs/wgpu", rev = "e86ed8b6c858451fa6da212dc9835730ad4da826" }
+wgpu = { git = "https://github.com/gfx-rs/wgpu", rev = "440b33f" }
 rerun = "0.22.0"
 rand = "0.9.0"
 

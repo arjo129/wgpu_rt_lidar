@@ -126,15 +126,13 @@ pub async fn get_raytracing_gpu(instance: &wgpu::Instance) -> (Adapter, Device, 
     .await;
 
     let Ok((device, queue)) = adapter
-        .request_device(
-            &wgpu::DeviceDescriptor {
-                label: None,
-                required_features,
-                required_limits: wgpu::Limits::downlevel_defaults(),
-                memory_hints: wgpu::MemoryHints::MemoryUsage,
-            },
-            None,
-        )
+        .request_device(&wgpu::DeviceDescriptor {
+            label: None,
+            required_features,
+            required_limits: wgpu::Limits::downlevel_defaults(),
+            memory_hints: wgpu::MemoryHints::MemoryUsage,
+            trace: wgpu::Trace::Off,
+        })
         .await
     else {
         panic!("Failed to create device");
