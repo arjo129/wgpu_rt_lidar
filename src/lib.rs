@@ -303,7 +303,7 @@ impl RayTraceScene {
                 .map(|a| [a[0] as u32, a[1] as u32, a[2] as u32])
                 .collect();
             rerun.log(
-                format!("mesh_{}", idx),
+                format!("/scene/mesh_{}", idx),
                 &rerun::Mesh3D::new(vertex).with_triangle_indices(indices),
             );
         }
@@ -329,7 +329,7 @@ impl RayTraceScene {
             let translations = transform.iter().map(|f| f.0);
             let rotations = transform.iter().map(|f| f.1);
             rerun.log(
-                format!("mesh_{}", idx),
+                format!("/scene/mesh_{}", idx),
                 &rerun::InstancePoses3D::new()
                     .with_translations(translations)
                     .with_quaternions(rotations),

@@ -1,9 +1,9 @@
-use glam::Vec3;
+use glam::{Vec3, Vec4, Affine3A, Quat};
 use rand::Rng;
 use std::{mem::size_of_val, result, str::FromStr};
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 
-use crate::{vertex, AssetMesh, RayTraceScene, Vertex};
+use crate::{vertex, AssetMesh, RayTraceScene, Vertex, utils::*, Instance};
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Debug)]
@@ -422,53 +422,34 @@ async fn dense_voxel_nearest_neighbor(
     }
 }
 
-#[repr(C)]
-#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Debug)]
-pub struct Tree {
-    /*x: i32,
-    y: i32,
-    z: i32,*/
-    pub position: Vec3,
-    pub parent: u32,
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Debug)]
-struct State {
-    x: u32,
-    y: u32,
-    z: u32,
-    w: u32,
-}
-
-pub async fn execute_experimental_gpu_rrt(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    voxel: &DenseVoxel,
-    lidar: &RayTraceScene,
-) -> Option<Vec<Tree>> {
+async fn collision_check_step(device: &wgpu::Device,
+    queue: &wgpu::Queue, scene: &RayTraceScene, points1: &Vec<Vec4>, points2: &Vec<Vec4>, mapping: &Vec<usize>)
+    -> Result<Vec<u32>,()>
+{
     // Loads the shader from WGSL
-    let cs_module = device.create_shader_module(wgpu::include_wgsl!("rrt.wgsl"));
+    let cs_module = device.create_shader_module(wgpu::include_wgsl!("collision_check.wgsl"));
+    let from_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("FROM Buffer"),
+        contents: bytemuck::cast_slice(&points1),
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+    });
 
-    let results = vec![
-        Tree {
-            position: Vec3::new(0.0, 0.0, 0.0),
-            parent: 50000,
-        };
-        voxel.capacity()
-    ];
+    let to_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("TO Buffer"),
+        contents: bytemuck::cast_slice(&points2),
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+    });
 
+    let mapping_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("MAPPING Buffer"),
+        contents: bytemuck::cast_slice(&mapping),
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+    });
+    println!("mapping: {}", mapping.len());
+    let results = vec![0xFFFFu32; mapping.len()];
     let result_buffer = device.create_buffer_init(&BufferInitDescriptor {
         label: Some("Result"),
         contents: bytemuck::cast_slice(&results),
-        usage: wgpu::BufferUsages::STORAGE
-            | wgpu::BufferUsages::COPY_DST
-            | wgpu::BufferUsages::COPY_SRC,
-    });
-
-    let found = device.create_buffer_init(&BufferInitDescriptor {
-        label: Some("Result"),
-        contents: bytemuck::cast_slice(&[0u32]),
         usage: wgpu::BufferUsages::STORAGE
             | wgpu::BufferUsages::COPY_DST
             | wgpu::BufferUsages::COPY_SRC,
@@ -485,31 +466,6 @@ pub async fn execute_experimental_gpu_rrt(
         mapped_at_creation: false,
     });
 
-    // A bind group defines how buffers are accessed by shaders.
-    // It is to WebGPU what a descriptor set is to Vulkan.
-    // `binding` here refers to the `binding` of a buffer in the shader (`layout(set = 0, binding = 0) buffer`).
-    let base = voxel.to_gpu_buffers(device);
-
-    let mut rng = rand::rng();
-    let random_seed: Vec<_> = (0..voxel.capacity())
-        .map(|_| State {
-            x: rng.random(),
-            y: rng.random(),
-            z: rng.random(),
-            w: rng.random(),
-        })
-        .collect();
-
-    let random_seed = device.create_buffer_init(&BufferInitDescriptor {
-        label: Some("Random seed"),
-        contents: bytemuck::cast_slice(&random_seed),
-        usage: wgpu::BufferUsages::STORAGE
-            | wgpu::BufferUsages::COPY_DST
-            | wgpu::BufferUsages::COPY_SRC,
-    });
-    // A pipeline specifies the operation of a shader
-
-    // Instantiates the pipeline.
     let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
         label: None,
         layout: None,
@@ -528,32 +484,29 @@ pub async fn execute_experimental_gpu_rrt(
         entries: &[
             wgpu::BindGroupEntry {
                 binding: 0,
-                resource: base.data_on_gpu.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: base.parameters.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 2,
-                resource: random_seed.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 3,
                 resource: result_buffer.as_entire_binding(),
             },
             wgpu::BindGroupEntry {
-                binding: 4,
-                resource: wgpu::BindingResource::AccelerationStructure(&lidar.tlas_package.tlas()),
+                binding: 1,
+                resource: wgpu::BindingResource::AccelerationStructure(scene.tlas_package.tlas()),
             },
             wgpu::BindGroupEntry {
-                binding: 5,
-                resource: found.as_entire_binding(),
+                binding: 2,
+                resource: from_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: to_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 4,
+                resource: mapping_buffer.as_entire_binding(),
             },
         ],
     });
-    let time = std::time::Instant::now();
 
+    // A command encoder executes one or many pipelines.
+    // It is to WebGPU what a command buffer is to Vulkan.
     let mut encoder =
         device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
     {
@@ -565,12 +518,11 @@ pub async fn execute_experimental_gpu_rrt(
         cpass.set_bind_group(0, &bind_group, &[]);
         cpass.insert_debug_marker("compute collatz iterations");
         cpass.dispatch_workgroups(
-            2, //voxel.length_steps() as u32,
-            2, //voxel.width_steps() as u32,
-            2, //voxel.height_steps() as u32,
+            mapping.len().try_into().unwrap(),
+            1,
+            1,
         ); // Number of cells to run, the (x,y,z) size of item being processed
     }
-
     // Sets adds copy operation to command encoder.
     // Will copy data from storage buffer on GPU to staging buffer on CPU.
     encoder.copy_buffer_to_buffer(&result_buffer, 0, &staging_buffer, 0, result_buffer.size());
@@ -604,11 +556,9 @@ pub async fn execute_experimental_gpu_rrt(
                                 //   delete myPointer;
                                 //   myPointer = NULL;
                                 // It effectively frees the memory
-
-        println!("Time taken: {:?}", time.elapsed());
-
+        println!("{:?}", result);
         // Returns data from buffer
-        Some(result)
+        Ok(result)
     } else {
         panic!("failed to run compute on gpu!")
     }
@@ -728,71 +678,38 @@ async fn test_voxel_nn_far_away() {
     //run().await;
 }
 
+
 #[cfg(test)]
 #[tokio::test]
-async fn test_voxel_rrt() {
-    use crate::utils::{create_cube, get_raytracing_gpu};
-
-    let mut voxel_grid =
-        DenseVoxel::new(Vec3::new(5.0, 5.0, 5.0), Vec3::new(0.0, 0.0, 0.0), 0.5, 10);
-
-    voxel_grid
-        .add_item(VoxelItem {
-            position: Vec3::new(0.5, 0.5, 0.5),
-            occupied: 0,
-        })
-        .unwrap();
-
-    for i in 0..5 {
-        for j in 0..5 {
-            for k in 0..5 {
-                let internal_index = voxel_grid.index(i, j, k);
-                let (x, y, z) = voxel_grid.from_index(internal_index);
-                assert_eq!(i, x);
-                assert_eq!(j, y);
-                assert_eq!(k, z);
-            }
-        }
-    }
-
+async fn test_collision_check() {
+    // Set up a wgpu instance and device
     let instance = wgpu::Instance::default();
-
     let (_, device, queue) = get_raytracing_gpu(&instance).await;
-    let cube = create_cube(0.2);
-    let instances = (0..4)
-        .map(|x| {
-            (0..4)
-                .map(move |y| {
-                    (2..4).map(move |z| crate::Instance {
-                        asset_mesh_index: 0,
-                        transform: glam::Affine3A::from_rotation_translation(
-                            glam::Quat::from_rotation_y(0.0),
-                            glam::Vec3 {
-                                x: x as f32 + 0.5,
-                                y: y as f32 + 0.5,
-                                z: z as f32 + 0.5,
-                            },
-                        ),
-                    })
-                })
-                .flatten()
-        })
-        .flatten()
-        .collect();
 
-    let scene = RayTraceScene::new(&device, &queue, &vec![cube], &instances).await;
-    let one = execute_experimental_gpu_rrt(&device, &queue, &voxel_grid, &scene)
-        .await
-        .unwrap();
-    println!("{:?}", one.len());
-    let result: Vec<_> = one.iter().filter(|p| p.parent > 50000).collect();
-    println!("Valid end goals: {:?}", result.len());
+    // Lets add a cube as an asset
+    let cube = create_cube(1.0);
+    let mut instances = vec![];
+    instances.push(Instance {
+        asset_mesh_index: 0,
+        transform: Affine3A::from_rotation_translation(
+            Quat::from_rotation_y(0.0_f32.to_radians()),
+            Vec3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
+        ),
+    });
 
-    let result: Vec<_> = one.iter().filter(|p| p.parent != 50000).collect();
-    println!("States expanded {:?}", result.len());
-    //println!("{:?}", result);
-    //assert_eq!(result.len(), 2);
+    let mut scene = RayTraceScene::new(&device, &queue, &vec![cube], &instances).await;
 
-    //assert_eq!(result[0].parent, target as u32);
-    //run().await;
+    let points1 = vec![Vec4::new(-2.0, -2.0, -2.0, 0.0), Vec4::new(6.0, 6.0, 6.0, 0.0)];
+    let points2 = vec![Vec4::new(7.0, 7.0, 7.0, 0.0), Vec4::new(2.0, 2.0, 2.0, 0.0)];
+    let mapping = vec![1, 0];
+
+    let res = collision_check_step(&device, &queue, &scene, &points2, &points1, &mapping).await.unwrap();
+
+    assert_eq!(res.len(), 2);
+    assert_eq!(res[0], 1);
+    assert_eq!(res[1], 0);
 }
