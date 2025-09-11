@@ -319,7 +319,7 @@ impl RayTraceScene {
             let rotation =
                 rerun::Quaternion::from_xyzw([rotation.x, rotation.y, rotation.z, rotation.w]);
             let Some(mesh_idx) = instance_map.get_mut(&instance.asset_mesh_index) else {
-                instance_map.insert(idx, vec![(translations, rotation)]);
+                instance_map.insert(instance.asset_mesh_index, vec![(translations, rotation)]);
                 continue;
             };
             mesh_idx.push((translations, rotation));

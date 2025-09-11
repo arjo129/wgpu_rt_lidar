@@ -2,7 +2,6 @@ use std::{borrow::Cow, iter, time::Instant};
 
 use bytemuck_derive::{Pod, Zeroable};
 use glam::{Affine3A, Mat4, Quat, Vec3, Vec4};
-use wgpu::util::DeviceExt;
 use wgpu_rt_lidar::{
     depth_camera::DepthCamera,
     lidar::Lidar,

@@ -422,7 +422,7 @@ async fn dense_voxel_nearest_neighbor(
     }
 }
 
-async fn collision_check_step(device: &wgpu::Device,
+pub async fn collision_check_step(device: &wgpu::Device,
     queue: &wgpu::Queue, scene: &RayTraceScene, points1: &Vec<Vec4>, points2: &Vec<Vec4>, mapping: &Vec<usize>)
     -> Result<Vec<u32>,()>
 {
