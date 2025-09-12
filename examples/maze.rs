@@ -1,7 +1,13 @@
+use std::collections::hash_map;
+use std::collections::HashMap;
+use std::io::Write;
+
 use glam::*;
 use rand::seq::SliceRandom;
 use rand::Rng;
 use wgpu_rt_lidar::utils::dense_voxel::collision_check_step;
+use wgpu_rt_lidar::utils::dense_voxel::dense_voxel_nearest_neighbor;
+use wgpu_rt_lidar::utils::dense_voxel::query_nearest_neighbours;
 use wgpu_rt_lidar::utils::dense_voxel::DenseVoxel;
 use wgpu_rt_lidar::utils::*;
 use wgpu_rt_lidar::Instance;
@@ -28,7 +34,7 @@ async fn main() {
     generate_maze(&mut maze, (1, 1, 1));
 
     // Randomly remove some interior walls to make the maze more porous
-    let wall_removal_probability = 0.80;
+    let wall_removal_probability = 0.90;
     for x in 0..maze_dim {
         for y in 0..maze_dim {
             for z in 0..maze_dim {
@@ -57,6 +63,16 @@ async fn main() {
         }
     }
 
+    let goal = Vec4::new(
+        rng.random_range(0.1f32..10.0),
+        rng.random_range(0.1f32..10.0),
+        rng.random_range(0.1f32..10.0),
+        0.0,
+    );
+    let mut file = std::fs::File::create("obstacles.txt").unwrap();
+    file.write_all("start: 0.0 0.0 0.0\n".as_bytes());
+
+    file.write_all(format!("goal: {} {} {}\n", goal.x, goal.y, goal.z).as_bytes());
     for x in 1..maze_dim {
         for y in 1..maze_dim {
             for z in 1..maze_dim {
@@ -67,6 +83,7 @@ async fn main() {
                             x as f32, y as f32, z as f32,
                         )),
                     });
+                    file.write_all(format!("obstacle: {} {} {}\n", x, y, z).as_bytes());
                 }
             }
         }
@@ -75,16 +92,10 @@ async fn main() {
     let scene = RayTraceScene::new(&device, &queue, &vec![cube], &instances).await;
     scene.visualize(&rec);
 
-    let num_intial_random = 100;
+    let num_intial_random = 1000;
     let mut random_pool = vec![];
     let initial_map = vec![0; num_intial_random];
 
-    let goal = Vec4::new(
-        rng.random_range(0.1f32..10.0),
-        rng.random_range(0.1f32..10.0),
-        rng.random_range(0.1f32..10.0),
-        0.0,
-    );
     for _ in 0..num_intial_random {
         let x = rng.random_range(0.1f32..10.0);
         let y = rng.random_range(0.1f32..10.0);
@@ -178,17 +189,32 @@ async fn main() {
         })
         .unwrap();
 
-    let mut pt_indices = vec![];
-    for pt in p {
-        pt_indices.push(
-            existing_points
-                .add_item(dense_voxel::VoxelItem {
-                    position: Vec3::new(pt.0, pt.1, pt.2),
-                    occupied: 0,
-                })
-                .unwrap(),
-        );
+    let mut pt_indices = HashMap::new();
+    for (id, pt) in p.iter().enumerate() {
+        let assigned_index = existing_points
+            .add_item(dense_voxel::VoxelItem {
+                position: Vec3::new(pt.0, pt.1, pt.2),
+                occupied: 0,
+            })
+            .unwrap();
+        pt_indices.insert(assigned_index, id);
+        //println!("{}", pt_indices[pt_indices.len() - 1])
     }
+
+    // Point generation
+    let mut random_pool2 = vec![];
+    for _ in 0..100 {
+        let x = rng.random_range(0.1f32..10.0);
+        let y = rng.random_range(0.1f32..10.0);
+        let z = rng.random_range(0.1f32..10.0);
+        random_pool2.push(Vec3::new(x, y, z));
+    }
+
+    let x = query_nearest_neighbours(&existing_points, random_pool2)
+        .await
+        .unwrap();
+    let found: Vec<_> = x.iter().filter(|p| **p != 0xFFFFu32).collect();
+    println!("p {:?}", found)
 }
 
 fn generate_maze(maze: &mut Vec<Vec<Vec<i32>>>, start: (usize, usize, usize)) {

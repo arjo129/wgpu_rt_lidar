@@ -1,9 +1,9 @@
-use glam::{Vec3, Vec4, Affine3A, Quat};
+use glam::{Affine3A, Quat, Vec3, Vec4};
 use rand::Rng;
 use std::{mem::size_of_val, result, str::FromStr};
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 
-use crate::{vertex, AssetMesh, RayTraceScene, Vertex, utils::*, Instance};
+use crate::{utils::*, vertex, AssetMesh, Instance, RayTraceScene, Vertex};
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Debug)]
@@ -286,7 +286,7 @@ impl DenseVoxelNearestNeighbors {
     }
 }
 
-async fn dense_voxel_nearest_neighbor(
+pub async fn dense_voxel_nearest_neighbor(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     voxel: &DenseVoxel,
@@ -422,10 +422,14 @@ async fn dense_voxel_nearest_neighbor(
     }
 }
 
-pub async fn collision_check_step(device: &wgpu::Device,
-    queue: &wgpu::Queue, scene: &RayTraceScene, points1: &Vec<Vec4>, points2: &Vec<Vec4>, mapping: &Vec<usize>)
-    -> Result<Vec<u32>,()>
-{
+pub async fn collision_check_step(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    scene: &RayTraceScene,
+    points1: &Vec<Vec4>,
+    points2: &Vec<Vec4>,
+    mapping: &Vec<usize>,
+) -> Result<Vec<u32>, ()> {
     // Loads the shader from WGSL
     let cs_module = device.create_shader_module(wgpu::include_wgsl!("collision_check.wgsl"));
     let from_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -517,11 +521,7 @@ pub async fn collision_check_step(device: &wgpu::Device,
         cpass.set_pipeline(&compute_pipeline);
         cpass.set_bind_group(0, &bind_group, &[]);
         cpass.insert_debug_marker("compute collatz iterations");
-        cpass.dispatch_workgroups(
-            mapping.len().try_into().unwrap(),
-            1,
-            1,
-        ); // Number of cells to run, the (x,y,z) size of item being processed
+        cpass.dispatch_workgroups(mapping.len().try_into().unwrap(), 1, 1); // Number of cells to run, the (x,y,z) size of item being processed
     }
     // Sets adds copy operation to command encoder.
     // Will copy data from storage buffer on GPU to staging buffer on CPU.
@@ -678,7 +678,6 @@ async fn test_voxel_nn_far_away() {
     //run().await;
 }
 
-
 #[cfg(test)]
 #[tokio::test]
 async fn test_collision_check() {
@@ -703,11 +702,16 @@ async fn test_collision_check() {
 
     let mut scene = RayTraceScene::new(&device, &queue, &vec![cube], &instances).await;
 
-    let points1 = vec![Vec4::new(-2.0, -2.0, -2.0, 0.0), Vec4::new(6.0, 6.0, 6.0, 0.0)];
+    let points1 = vec![
+        Vec4::new(-2.0, -2.0, -2.0, 0.0),
+        Vec4::new(6.0, 6.0, 6.0, 0.0),
+    ];
     let points2 = vec![Vec4::new(7.0, 7.0, 7.0, 0.0), Vec4::new(2.0, 2.0, 2.0, 0.0)];
     let mapping = vec![1, 0];
 
-    let res = collision_check_step(&device, &queue, &scene, &points2, &points1, &mapping).await.unwrap();
+    let res = collision_check_step(&device, &queue, &scene, &points2, &points1, &mapping)
+        .await
+        .unwrap();
 
     assert_eq!(res.len(), 2);
     assert_eq!(res[0], 1);

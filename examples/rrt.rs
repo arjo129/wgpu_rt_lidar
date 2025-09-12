@@ -4,6 +4,7 @@ use rand::Rng;
 use rerun::dataframe::ColumnSelector;
 use rerun::external::crossbeam::queue;
 use rerun::Vec4D;
+use std::io::Write;
 use wgpu_rt_lidar::utils::dense_voxel::collision_check_step;
 use wgpu_rt_lidar::utils::dense_voxel::DenseVoxel;
 use wgpu_rt_lidar::utils::*;
@@ -24,6 +25,7 @@ async fn main() {
     let mut instances = vec![];
     let num_cubes = 30;
     let mut rng = rand::thread_rng();
+    let mut positions = vec![];
     for _ in 0..num_cubes {
         let x = rng.random_range(0.1f32..10.0);
         let y = rng.random_range(0.1f32..10.0);
@@ -37,12 +39,14 @@ async fn main() {
                 Vec3 { x, y, z },
             ),
         });
+
+        positions.push((x, y, z));
     }
 
     let mut scene = RayTraceScene::new(&device, &queue, &vec![cube], &instances).await;
     scene.visualize(&rec);
 
-    let num_intial_random = 100;
+    let num_intial_random = 1000;
     let mut random_pool = vec![];
     let mut initial_map = vec![0; num_intial_random];
 
@@ -52,6 +56,15 @@ async fn main() {
         rng.random_range(0.1f32..10.0),
         0.0,
     );
+
+    let mut file = std::fs::File::create("obstacles.txt").unwrap();
+    file.write_all("start: 0.0 0.0 0.0\n".as_bytes());
+
+    file.write_all(format!("goal: {} {} {}\n", goal.x, goal.y, goal.z).as_bytes());
+
+    for (x, y, z) in positions {
+        file.write_all(format!("obstacle: {} {} {}\n", x, y, z).as_bytes());
+    }
     for i in 0..num_intial_random {
         let x = rng.random_range(0.1f32..10.0);
         let y = rng.random_range(0.1f32..10.0);
