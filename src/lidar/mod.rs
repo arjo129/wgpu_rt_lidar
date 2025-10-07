@@ -26,6 +26,21 @@ pub struct Lidar {
 }
 
 impl Lidar {
+    /// Visualizes the LiDAR rays using the `rerun` library.
+    ///
+    /// This function logs the LiDAR rays to a `rerun` recording stream
+    /// for visualization and debugging.
+    ///
+    /// # Arguments
+    ///
+    /// * `rec` - The `rerun::RecordingStream` to log the visualization to.
+    /// * `lidar_pose` - The pose of the LiDAR sensor in world coordinates.
+    /// * `name` - The name to use for the logging entity.
+    ///
+    /// # Note
+    ///
+    /// This method is only available when the `visualization` feature is enabled.
+    #[cfg(feature = "visualization")]
     pub fn visualize_rays(&self, rec: &rerun::RecordingStream, lidar_pose: &Affine3A, name: &str) {
         let (_scale, rot, translation) = lidar_pose.to_scale_rotation_translation();
         let vectors: Vec<[f32; 3]> = self
