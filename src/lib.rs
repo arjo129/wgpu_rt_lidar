@@ -292,6 +292,11 @@ impl RayTraceScene {
     /// # Arguments
     ///
     /// * `rerun` - The `rerun::RecordingStream` to log the visualization to.
+    ///
+    /// # Note
+    ///
+    /// This method is only available when the `visualization` feature is enabled.
+    #[cfg(feature = "visualization")]
     pub fn visualize(&self, rerun: &rerun::RecordingStream) {
         // TODO
         for (idx, mesh) in self.assets.iter().enumerate() {
