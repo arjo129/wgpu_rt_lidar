@@ -266,8 +266,8 @@ impl RayTraceScene {
     pub async fn set_transform(
         &mut self,
         device: &wgpu::Device,
-        update_instance: &Vec<Instance>,
-        idx: &Vec<usize>,
+        update_instance: &[Instance],
+        idx: &[usize],
     ) -> Result<(), String> {
         if update_instance.len() != idx.len() {
             return Err("Instance and index length mismatch".to_string());
@@ -286,7 +286,7 @@ impl RayTraceScene {
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
         encoder.build_acceleration_structures(iter::empty(), iter::once(&self.tlas_package));
         // Warning: SLOW!
-        self.instances = update_instance.clone();
+        self.instances = update_instance.to_owned();
 
         Ok(())
     }
