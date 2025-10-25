@@ -767,9 +767,4 @@ async fn test_voxel_rrt() {
 
     let result: Vec<_> = one.iter().filter(|p| p.parent != 50000).collect();
     println!("States expanded {:?}", result.len());
-    //println!("{:?}", result);
-    //assert_eq!(result.len(), 2);
-
-    //assert_eq!(result[0].parent, target as u32);
-    //run().await;
 }
