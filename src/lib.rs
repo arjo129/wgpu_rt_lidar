@@ -1,4 +1,6 @@
-use std::{collections::HashMap, iter};
+#[cfg(feature = "visualization")]
+use std::collections::HashMap;
+use std::iter;
 
 use bytemuck_derive::{Pod, Zeroable};
 use glam::Affine3A;
@@ -107,10 +109,13 @@ pub struct Instance {
 /// This struct manages the 3D scene, including mesh assets and instances,
 /// and provides the necessary structures for GPU-based ray tracing.
 pub struct RayTraceScene {
+    #[cfg(feature = "visualization")]
     pub(crate) vertex_buf: wgpu::Buffer,
+    #[cfg(feature = "visualization")]
     pub(crate) index_buf: wgpu::Buffer,
     pub(crate) blas: Vec<wgpu::Blas>,
     pub(crate) tlas_package: wgpu::Tlas,
+    #[cfg(feature = "visualization")]
     pub(crate) assets: Vec<AssetMesh>,
     pub(crate) instances: Vec<Instance>,
 }
@@ -131,7 +136,7 @@ impl RayTraceScene {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         assets: &Vec<AssetMesh>,
-        instances: &Vec<Instance>,
+        instances: &[Instance],
     ) -> Self {
         let mut vertex_data = vec![];
         let mut index_data = vec![];
@@ -235,12 +240,15 @@ impl RayTraceScene {
         device.push_error_scope(wgpu::ErrorFilter::Validation);
 
         Self {
+            #[cfg(feature = "visualization")]
             vertex_buf,
+            #[cfg(feature = "visualization")]
             index_buf,
             blas,
             tlas_package,
+            #[cfg(feature = "visualization")]
             assets: assets.clone(),
-            instances: instances.clone(),
+            instances: instances.to_vec(),
         }
     }
 
@@ -258,9 +266,8 @@ impl RayTraceScene {
     pub async fn set_transform(
         &mut self,
         device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        update_instance: &Vec<Instance>,
-        idx: &Vec<usize>,
+        update_instance: &[Instance],
+        idx: &[usize],
     ) -> Result<(), String> {
         if update_instance.len() != idx.len() {
             return Err("Instance and index length mismatch".to_string());
@@ -279,7 +286,7 @@ impl RayTraceScene {
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
         encoder.build_acceleration_structures(iter::empty(), iter::once(&self.tlas_package));
         // Warning: SLOW!
-        self.instances = update_instance.clone();
+        self.instances = update_instance.to_owned();
 
         Ok(())
     }

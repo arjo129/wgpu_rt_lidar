@@ -90,18 +90,11 @@ async fn main() {
 
     let mut scene = RayTraceScene::new(&device, &queue, &vec![cube], &instances).await;
 
-    /// Set the camera frame size
+    // Set the camera frame size
     let mut depth_camera = DepthCamera::new(&device, 1024, 1024, 59.0, 50.0).await;
 
-    /// Set the lidar beams
+    // Set the lidar beams
     let lidar_beams = get_vlp16_spinning_beam_directions(0.5);
-
-    /*let lidar_beams = (0..2040)
-    .map(|f| {
-        let angle = 3.14 * f as f32 / 2040.0;
-        Vec3::new(0.0, angle.sin(), angle.cos())
-    })
-    .collect::<Vec<_>>();*/
 
     let mut lidar = Lidar::new(&device, lidar_beams).await;
 
@@ -151,7 +144,6 @@ async fn main() {
             .render_lidar_beams(&scene, &device, &queue, &lidar_pose)
             .await;
         println!("Took {:?} to render a lidar frame", start_time.elapsed());
-        //println!("{:?}", res);
     }
 
     let mut updated_instances = vec![];
@@ -162,7 +154,7 @@ async fn main() {
     }
 
     scene
-        .set_transform(&device, &queue, &instances, &updated_instances)
+        .set_transform(&device, &instances, &updated_instances)
         .await
         .unwrap();
 

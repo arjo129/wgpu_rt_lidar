@@ -130,20 +130,19 @@ impl Lidar {
             );
         }
 
-        let mut width = 1;
         let mut height = 1;
         let mut depth = 1;
 
         let num_lidar_beams = num_points;
 
         // Distribute across X first
-        width = num_lidar_beams.min(max_workgroup_x);
-        let mut remaining_beams = (num_lidar_beams + width - 1) / width; // Ceiling division
+        let width = num_lidar_beams.min(max_workgroup_x);
+        let mut remaining_beams = num_lidar_beams.div_ceil(width); // Ceiling division
 
         // If there are still beams left, distribute across Y
         if remaining_beams > 1 {
             height = remaining_beams.min(max_workgroup_x);
-            remaining_beams = (remaining_beams + height - 1) / height; // Ceiling division
+            remaining_beams = remaining_beams.div_ceil(height); // Ceiling division
         }
 
         // If there are still beams left, distribute across Z
@@ -273,7 +272,7 @@ impl Lidar {
 
             drop(view);
             staging_buffer.unmap();
-            return result;
+            result
         }
     }
 
@@ -375,7 +374,7 @@ impl Lidar {
 
             drop(view);
             staging_buffer.unmap();
-            return result;
+            result
         }
     }
 }

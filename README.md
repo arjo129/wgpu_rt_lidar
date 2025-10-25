@@ -65,4 +65,4 @@ I would love to see more bindings such asones for bevy or even a python wrapper 
 ## Future improvements
 
 Currently this relies on a seperate GPU call per sensor. It should be possible to Batch multiple sensor calls from the same scene. 
-However, there will need to be some work done to perform kernel fusion.
+However, there will need to be some work done to perform kernel fusion. I would also be open to new sensor types being added (like imaging sonars etc.). 
