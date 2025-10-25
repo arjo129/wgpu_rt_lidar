@@ -738,7 +738,7 @@ async fn test_voxel_rrt() {
 
     let (_, device, queue) = get_raytracing_gpu(&instance).await;
     let cube = create_cube(0.2);
-    let instances = (0..4)
+    let instances: Vec<_> = (0..4)
         .flat_map(|x| {
             (0..4)
                 .flat_map(move |y| {
