@@ -1,4 +1,4 @@
-use std::{collections::HashMap, iter};
+use std::iter;
 
 use bytemuck_derive::{Pod, Zeroable};
 use glam::Affine3A;
