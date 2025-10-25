@@ -43,6 +43,18 @@ wgpu_rt_lidar = { version = "0.1", features = ["visualization"] }
 
 With the `visualization` feature enabled, you can use the `visualize()` method on `RayTraceScene` and the `visualize_rays()` method on `Lidar` to visualize scenes and sensor data using `rerun`.
 
+### Running Examples
+
+We provide a basic exaqmple in [examples/multi_sensor.rs](examples/multi_sensor.rs).
+
+To run it run:
+```bash
+cargo run --example multi_sensor --features="visualization"
+```
+You will need rerun version 0.22.0 to visuallize the output.
+![rerun demo](docs/images/rerun.png)
+
+
 ## Bindings
 
 This project only offers a rust crate that renders LiDAR and Depth Cameras, however we provide bindings to other simulators:
