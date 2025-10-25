@@ -22,9 +22,5 @@ visualization = ["rerun"]
 name = "multi_sensor"
 required-features = ["visualization"]
 
-[[example]]
-name = "rrt"
-required-features = ["visualization"]
-
 [dev-dependencies]
 ndarray= "*"
