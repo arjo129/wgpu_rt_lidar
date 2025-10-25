@@ -18,10 +18,30 @@ Key features of the library include:
 *   **Dynamic Scenes:** Supports dynamic scenes where objects can be added, removed, or moved at runtime.
 *   **Flexible Sensor Models:** Provides flexible and configurable models for both LiDAR and depth cameras.
 *   **Point Cloud Generation:** Can generate both depth images and 3D point clouds from the simulated sensors.
-*   **Visualization:** Integrates with the `rerun` visualization library for easy debugging and visualization of scenes and sensor data.
+*   **Visualization:** Integrates with the `rerun` visualization library for easy debugging and visualization of scenes and sensor data (optional feature).
 *   **Asynchronous API:** The library is designed with an asynchronous API, allowing for efficient integration into larger applications.
 
 The project includes examples that demonstrate how to create a scene, configure and use the sensor models, and visualize the results. This library is an ideal tool for researchers and engineers working on robotics, autonomous driving, and other applications that require realistic sensor simulation.
+
+## Usage
+
+To use this library in your project, add it to your `Cargo.toml`:
+
+```toml
+[dependencies]
+wgpu_rt_lidar = "0.1"
+```
+
+### Visualization Feature
+
+The library includes optional visualization support via the `rerun` library. To enable visualization features, add the `visualization` feature to your dependency:
+
+```toml
+[dependencies]
+wgpu_rt_lidar = { version = "0.1", features = ["visualization"] }
+```
+
+With the `visualization` feature enabled, you can use the `visualize()` method on `RayTraceScene` and the `visualize_rays()` method on `Lidar` to visualize scenes and sensor data using `rerun`.
 
 ## Bindings
 

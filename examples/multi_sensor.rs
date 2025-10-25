@@ -13,8 +13,8 @@ use wgpu_rt_lidar::{
 fn get_vlp16_spinning_beam_directions(azimuth_resolution_deg: f32) -> Vec<Vec3> {
     // Fixed vertical angles for the 16 Velodyne VLP-16 lasers
     let vertical_angles_deg: [f32; 16] = [
-        -15.0, -13.0, -11.0, -9.0, -7.0, -5.0, -3.0, -1.0,
-        1.0, 3.0, 5.0, 7.0, 9.0, 11.0, 13.0, 15.0,
+        -15.0, -13.0, -11.0, -9.0, -7.0, -5.0, -3.0, -1.0, 1.0, 3.0, 5.0, 7.0, 9.0, 11.0, 13.0,
+        15.0,
     ];
 
     let mut beam_directions: Vec<Vec3> = Vec::new();
@@ -56,7 +56,6 @@ fn get_vlp16_spinning_beam_directions(azimuth_resolution_deg: f32) -> Vec<Vec3> 
     beam_directions
 }
 
-
 #[tokio::main]
 async fn main() {
     // Set up a wgpu instance and device
@@ -95,15 +94,15 @@ async fn main() {
     let mut depth_camera = DepthCamera::new(&device, 1024, 1024, 59.0, 50.0).await;
 
     /// Set the lidar beams
-    let lidar_beams =  get_vlp16_spinning_beam_directions(0.5);
-    
+    let lidar_beams = get_vlp16_spinning_beam_directions(0.5);
+
     /*let lidar_beams = (0..2040)
-        .map(|f| {
-            let angle = 3.14 * f as f32 / 2040.0;
-            Vec3::new(0.0, angle.sin(), angle.cos())
-        })
-        .collect::<Vec<_>>();*/
-    
+    .map(|f| {
+        let angle = 3.14 * f as f32 / 2040.0;
+        Vec3::new(0.0, angle.sin(), angle.cos())
+    })
+    .collect::<Vec<_>>();*/
+
     let mut lidar = Lidar::new(&device, lidar_beams).await;
 
     scene.visualize(&rec);
