@@ -26,5 +26,5 @@ name = "multi_sensor"
 required-features = ["visualization"]
 
 [dev-dependencies]
-ndarray= "*"
+ndarray= "0.16.1"
 
