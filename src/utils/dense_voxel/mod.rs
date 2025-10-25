@@ -740,20 +740,19 @@ async fn test_voxel_rrt() {
     let cube = create_cube(0.2);
     let instances: Vec<_> = (0..4)
         .flat_map(|x| {
-            (0..4)
-                .flat_map(move |y| {
-                    (2..4).map(move |z| crate::Instance {
-                        asset_mesh_index: 0,
-                        transform: glam::Affine3A::from_rotation_translation(
-                            glam::Quat::from_rotation_y(0.0),
-                            glam::Vec3 {
-                                x: x as f32 + 0.5,
-                                y: y as f32 + 0.5,
-                                z: z as f32 + 0.5,
-                            },
-                        ),
-                    })
+            (0..4).flat_map(move |y| {
+                (2..4).map(move |z| crate::Instance {
+                    asset_mesh_index: 0,
+                    transform: glam::Affine3A::from_rotation_translation(
+                        glam::Quat::from_rotation_y(0.0),
+                        glam::Vec3 {
+                            x: x as f32 + 0.5,
+                            y: y as f32 + 0.5,
+                            z: z as f32 + 0.5,
+                        },
+                    ),
                 })
+            })
         })
         .collect();
 

@@ -1,6 +1,6 @@
-use std::iter;
 #[cfg(feature = "visualization")]
 use std::collections::HashMap;
+use std::iter;
 
 use bytemuck_derive::{Pod, Zeroable};
 use glam::Affine3A;
