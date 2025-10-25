@@ -1,7 +1,6 @@
 use std::{borrow::Cow, iter};
 
-use glam::{Affine3A, Quat, Vec3, Vec4};
-use rand::rand_core::le;
+use glam::{Affine3A, Vec3, Vec4};
 use wgpu::util::DeviceExt;
 
 use crate::{affine_to_4x4rows, RayTraceScene};

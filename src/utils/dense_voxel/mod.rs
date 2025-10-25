@@ -1,10 +1,9 @@
 use glam::Vec3;
 use rand::Rng;
-use std::{mem::size_of_val, result, str::FromStr};
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 
 use crate::utils::get_raytracing_gpu;
-use crate::{vertex, AssetMesh, RayTraceScene, Vertex};
+use crate::RayTraceScene;
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Debug)]
@@ -33,10 +32,10 @@ impl DenseVoxel {
             panic!("Invalid voxel grid bounds");
         }
         let num_voxel_grids = (top_right - bottom_left) / resolution;
-        let num_voxel_grids = (num_voxel_grids.x.ceil() as usize
+        let num_voxel_grids = num_voxel_grids.x.ceil() as usize
             * num_voxel_grids.y.ceil() as usize
             * num_voxel_grids.z.ceil() as usize
-            * max_density as usize);
+            * max_density as usize;
         let data_on_cpu = (0..num_voxel_grids)
             .map(|_| VoxelItem {
                 position: Vec3::new(0.0, 0.0, 0.0),
@@ -233,7 +232,7 @@ pub async fn query_nearest_neighbours(voxel: &DenseVoxel, points: Vec<Vec3>) -> 
     dense_voxel_nearest_neighbor(&device, &queue, voxel, &points).await
 }
 
-struct DenseVoxelNearestNeighbors {
+pub struct DenseVoxelNearestNeighbors {
     pipeline: wgpu::ComputePipeline,
     result_buffer: wgpu::Buffer,
 }

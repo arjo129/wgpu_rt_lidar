@@ -2,6 +2,9 @@
 
 This project is a high-performance, hardware-accelerated ray tracing library for robotics and autonomy simulation, written in Rust and using the `wgpu` graphics API. It provides a flexible and easy-to-use platform for simulating sensor data from LiDAR and depth cameras in 3D environments.
 
+Here you can see it being used as a LiDAR backend in Gazebo:
+![rviz demo with gazebo](docs/images/rviz_demo.png)
+
 At its core, the library provides a `RayTraceScene` that can be populated with 3D mesh assets and instances. It leverages hardware-accelerated ray tracing through `wgpu`'s support for acceleration structures (BLAS and TLAS), enabling efficient rendering of complex, dynamic scenes.
 
 The library offers two main sensor simulation modules:
@@ -45,11 +48,9 @@ With the `visualization` feature enabled, you can use the `visualize()` method o
 This project only offers a rust crate that renders LiDAR and Depth Cameras, however we provide bindings to other simulators:
 * [Gazebo Binding](https://github.com/arjo129/gz_wgpu_rt_lidar)
 
+I would love to see more bindings such asones for bevy or even a python wrapper around this library.
+
 ## Future improvements
 
 Currently this relies on a seperate GPU call per sensor. It should be possible to Batch multiple sensor calls from the same scene. 
-However, there will need to be some work done to accomodate the different 
-
-## API Stability Guarantees
-
-NONE. Currently in active development.
+However, there will need to be some work done to perform kernel fusion.
