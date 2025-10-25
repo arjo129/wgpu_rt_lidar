@@ -57,8 +57,8 @@ impl DepthCamera {
             DepthCameraUniforms {
                 view_inverse: view.inverse(),
                 proj_inverse: proj.inverse(),
-                width: width,
-                height: height,
+                width,
+                height,
                 padding: [0.0; 2],
             }
         };
@@ -190,7 +190,7 @@ impl DepthCamera {
 
             drop(view);
             staging_buffer.unmap();
-            return result;
+            result
         }
     }
 
@@ -288,7 +288,7 @@ impl DepthCamera {
 
             drop(view);
             staging_buffer.unmap();
-            return result;
+            result
         }
     }
 

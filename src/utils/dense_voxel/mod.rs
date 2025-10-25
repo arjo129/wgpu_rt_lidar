@@ -107,7 +107,7 @@ impl DenseVoxel {
                 return Ok(index + i);
             }
         }
-        return Err("No space in voxel grid".to_string());
+        Err("No space in voxel grid".to_string())
     }
 
     fn index(&self, x: usize, y: usize, z: usize) -> usize {
@@ -196,7 +196,7 @@ struct DenseVoxelGpuParams {
     _padding2: f32,
 }
 
-struct DenseVoxelGpuRepresentation {
+pub struct DenseVoxelGpuRepresentation {
     data_on_gpu: wgpu::Buffer,
     parameters: wgpu::Buffer,
     cpu_parameters: DenseVoxelGpuParams,
@@ -228,7 +228,7 @@ impl DenseVoxelGpuRepresentation {
 /// Queries an approximate nearest neighbour for each point in the `points` vector.
 pub async fn query_nearest_neighbours(voxel: &DenseVoxel, points: Vec<Vec3>) -> Option<Vec<u32>> {
     let instance = wgpu::Instance::default();
-    let (adapter, device, queue) = get_raytracing_gpu(&instance).await;
+    let (_adapter, device, queue) = get_raytracing_gpu(&instance).await;
     dense_voxel_nearest_neighbor(&device, &queue, voxel, &points).await
 }
 
@@ -318,7 +318,7 @@ async fn dense_voxel_nearest_neighbor(
 
     // Instantiates the bind group, once again specifying the binding of buffers.
     let bind_group_layout = compute_pipeline.get_bind_group_layout(0);
-    println!("Bind group layout: {:?}", bind_group_layout);
+    println!("Bind group layout: {bind_group_layout:?}");
     let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: None,
         layout: &bind_group_layout,
@@ -500,7 +500,7 @@ pub async fn execute_experimental_gpu_rrt(
 
     // Instantiates the bind group, once again specifying the binding of buffers.
     let bind_group_layout = compute_pipeline.get_bind_group_layout(0);
-    println!("Bind group layout: {:?}", bind_group_layout);
+    println!("Bind group layout: {bind_group_layout:?}");
     let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: None,
         layout: &bind_group_layout,
@@ -739,9 +739,9 @@ async fn test_voxel_rrt() {
     let (_, device, queue) = get_raytracing_gpu(&instance).await;
     let cube = create_cube(0.2);
     let instances = (0..4)
-        .map(|x| {
+        .flat_map(|x| {
             (0..4)
-                .map(move |y| {
+                .flat_map(move |y| {
                     (2..4).map(move |z| crate::Instance {
                         asset_mesh_index: 0,
                         transform: glam::Affine3A::from_rotation_translation(
@@ -754,9 +754,7 @@ async fn test_voxel_rrt() {
                         ),
                     })
                 })
-                .flatten()
         })
-        .flatten()
         .collect();
 
     let scene = RayTraceScene::new(&device, &queue, &vec![cube], &instances).await;

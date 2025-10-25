@@ -119,7 +119,7 @@ pub async fn get_raytracing_gpu(instance: &wgpu::Instance) -> (Adapter, Device, 
         | wgpu::Features::EXPERIMENTAL_RAY_TRACING_ACCELERATION_STRUCTURE;
     let required_downlevel_capabilities = wgpu::DownlevelCapabilities::default();
     let adapter = get_adapter_with_capabilities_or_from_env(
-        &instance,
+        instance,
         &required_features,
         &required_downlevel_capabilities,
     )
@@ -138,6 +138,6 @@ pub async fn get_raytracing_gpu(instance: &wgpu::Instance) -> (Adapter, Device, 
     else {
         panic!("Failed to create device");
     };
-    println!("Using {:?}", device);
+    println!("Using {device:?}");
     (adapter, device, queue)
 }
