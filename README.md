@@ -1,4 +1,5 @@
 # WGPU_RT_LIDAR
+![Crates.io Version](https://img.shields.io/crates/v/wgpu-rt-lidar) ![docs.rs](https://img.shields.io/docsrs/wgpu_rt_lidar)
 
 This project is a high-performance, hardware-accelerated ray tracing library for robotics and autonomy simulation, written in Rust and using the `wgpu` graphics API. It provides a flexible and easy-to-use platform for simulating sensor data from LiDAR and depth cameras in 3D environments.
 
