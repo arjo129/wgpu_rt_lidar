@@ -262,10 +262,12 @@ impl Lidar {
         let (sender, receiver) = flume::bounded(1);
         buffer_slice.map_async(wgpu::MapMode::Read, move |v| sender.send(v).unwrap());
 
-        device.poll(wgpu::PollType::Wait {
-          submission_index: None,
-          timeout: None  
-        }).unwrap();
+        device
+            .poll(wgpu::PollType::Wait {
+                submission_index: None,
+                timeout: None,
+            })
+            .unwrap();
 
         receiver.recv().unwrap().unwrap();
 
@@ -367,10 +369,12 @@ impl Lidar {
         let (sender, receiver) = flume::bounded(1);
         buffer_slice.map_async(wgpu::MapMode::Read, move |v| sender.send(v).unwrap());
 
-        device.poll(wgpu::PollType::Wait{
-            submission_index: None,
-            timeout: None
-        }).unwrap();
+        device
+            .poll(wgpu::PollType::Wait {
+                submission_index: None,
+                timeout: None,
+            })
+            .unwrap();
 
         receiver.recv().unwrap().unwrap();
 
