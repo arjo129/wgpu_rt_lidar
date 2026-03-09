@@ -376,7 +376,10 @@ async fn dense_voxel_nearest_neighbor(
     // Poll the device in a blocking manner so that our future resolves.
     // In an actual application, `device.poll(...)` should
     // be called in an event loop or on another thread.
-    device.poll(wgpu::PollType::wait()).unwrap();
+    device.poll(wgpu::PollType::Wait {
+        submission_index: None,
+        timeout: None
+    }).unwrap();
 
     // Awaits until `buffer_future` can be read from
     if let Ok(Ok(())) = receiver.recv_async().await {
@@ -566,7 +569,10 @@ pub async fn execute_experimental_gpu_rrt(
     // Poll the device in a blocking manner so that our future resolves.
     // In an actual application, `device.poll(...)` should
     // be called in an event loop or on another thread.
-    device.poll(wgpu::PollType::wait()).unwrap();
+    device.poll(wgpu::PollType::Wait{
+        submission_index: None,
+        timeout: None
+    }).unwrap();
 
     // Awaits until `buffer_future` can be read from
     if let Ok(Ok(())) = receiver.recv_async().await {

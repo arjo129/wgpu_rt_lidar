@@ -1,3 +1,4 @@
+enable wgpu_ray_query;
 @group(0) @binding(0)
 var<storage, read_write> v_indices: array<vec4<f32>>;
 

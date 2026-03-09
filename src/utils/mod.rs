@@ -93,7 +93,7 @@ async fn get_adapter_with_capabilities_or_from_env(
             );
         adapter
     } else {
-        let adapters = instance.enumerate_adapters(Backends::all());
+        let adapters = instance.enumerate_adapters(Backends::all()).await;
 
         let mut chosen_adapter = None;
         for adapter in adapters {
@@ -115,8 +115,7 @@ pub async fn get_raytracing_gpu(instance: &wgpu::Instance) -> (Adapter, Device, 
     let required_features = wgpu::Features::TEXTURE_BINDING_ARRAY
         | wgpu::Features::STORAGE_RESOURCE_BINDING_ARRAY
         | wgpu::Features::VERTEX_WRITABLE_STORAGE
-        | wgpu::Features::EXPERIMENTAL_RAY_QUERY
-        | wgpu::Features::EXPERIMENTAL_RAY_TRACING_ACCELERATION_STRUCTURE;
+        | wgpu::Features::EXPERIMENTAL_RAY_QUERY;
     let required_downlevel_capabilities = wgpu::DownlevelCapabilities::default();
     let adapter = get_adapter_with_capabilities_or_from_env(
         instance,
@@ -132,6 +131,7 @@ pub async fn get_raytracing_gpu(instance: &wgpu::Instance) -> (Adapter, Device, 
             required_limits: wgpu::Limits::default()
                 .using_minimum_supported_acceleration_structure_values(),
             memory_hints: wgpu::MemoryHints::MemoryUsage,
+            experimental_features: unsafe { wgpu::ExperimentalFeatures::enabled() },
             trace: wgpu::Trace::Off,
         })
         .await
