@@ -1,3 +1,5 @@
+enable wgpu_ray_query;
+
 struct DenseVoxelGpuParams {
     // Word 1
     top_right: vec3<f32>,
