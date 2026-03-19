@@ -1,3 +1,4 @@
+enable wgpu_ray_query;
 /*
 The contents of the RayQuery struct are roughly as follows
 let RAY_FLAG_NONE = 0x00u;
